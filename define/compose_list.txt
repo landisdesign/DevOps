@@ -1,0 +1,6 @@
+WEB_SERVER_PORT "Web server port" "80"
+STACK_NAME "Stack name" "notes"
+MONGO_BACKUP_SRC "MongoDB backup directory" "/data/mongodb/backup"
+MONGO_BACKUP_NAME "MongoDB backup name" "backup"
+MONGO_REPLICA_NAME "MongoDB replica set name" "replicaSet"
+MONGO_HOSTS "MongoDB replica set hosts" "mongo-1,mongo-2,mongo-3"

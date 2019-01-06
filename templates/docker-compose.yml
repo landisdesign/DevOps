@@ -1,0 +1,116 @@
+version: "3.5"
+
+x-mongo-defaults: &mongo-defaults
+    image: "landisdesign/mongo-cluster:4.0.3-xenial"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 250M
+    volumes:
+      - /data/db
+      - $[MONGO_BACKUP_SRC]:/data/mongodb/backup
+    networks:
+      - webnet
+    labels:
+      com.michael-landis-awakening.mongodb.backup-name: "$[MONGO_BACKUP_NAME]"
+      com.michael-landis-awakening.mongodb.replica-name: "$[MONGO_REPLICA_NAME]"
+    environment:
+      - MONGO_BACKUP_NAME
+      - MONGO_REPLICA_NAME
+      - MONGO_HOSTS
+    secrets:
+      - mongo_backup_admin_name
+      - mongo_backup_admin_pwd
+      - mongo_cluster_admin_name
+      - mongo_cluster_admin_pwd
+      - mongo_db_admin_name
+      - mongo_db_admin_pwd
+      - mongo_user_admin_name
+      - mongo_user_admin_pwd
+
+services:
+
+  web:
+    image: "landisdesign/tomcat-alpine:9.0.12"
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 100M
+    ports:
+      - target: 8080
+        published: $[WEB_SERVER_PORT]
+    networks:
+      - webnet
+
+  visualizer:
+    image: "dockersamples/visualizer:stable"
+    ports:
+      - target: 8080
+        published: 8080
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+    networks:
+      - webnet
+
+$[loop:MONGO_HOSTS>MONGO_HOST]
+  $[MONGO_HOST]:
+    <<: *mongo-defaults
+    hostname: $[MONGO_HOST]
+    entrypoint: "tail -f /dev/null"
+
+$[endloop:]
+  mongo-shell:
+    <<: *mongo-defaults
+    image: "landisdesign/mongo-authenticated:4.0.3-xenial"
+
+  terminal:
+    image: "bash:4.0"
+    command: "tail -f /dev/null"
+    volumes:
+      - /:/host-machine
+    networks:
+      - webnet
+    secrets:
+      - mongo_backup_admin_name
+      - mongo_backup_admin_pwd
+      - mongo_cluster_admin_name
+      - mongo_cluster_admin_pwd
+      - mongo_db_admin_name
+      - mongo_db_admin_pwd
+      - mongo_user_admin_name
+      - mongo_user_admin_pwd
+
+networks:
+  webnet:
+
+secrets:
+  mongo_backup_admin_name:
+    external: true
+    name: mongo_backup_admin_name_$[DOCKER_SECRET_VERSION]
+  mongo_backup_admin_pwd:
+    external: true
+    name: mongo_backup_admin_pwd_$[DOCKER_SECRET_VERSION]
+  mongo_cluster_admin_name:
+    external: true
+    name: mongo_cluster_admin_name_$[DOCKER_SECRET_VERSION]
+  mongo_cluster_admin_pwd:
+    external: true
+    name: mongo_cluster_admin_pwd_$[DOCKER_SECRET_VERSION]
+  mongo_db_admin_name:
+    external: true
+    name: mongo_db_admin_name_$[DOCKER_SECRET_VERSION]
+  mongo_db_admin_pwd:
+    external: true
+    name: mongo_db_admin_pwd_$[DOCKER_SECRET_VERSION]
+  mongo_user_admin_name:
+    external: true
+    name: mongo_user_admin_name_$[DOCKER_SECRET_VERSION]
+  mongo_user_admin_pwd:
+    external: true
+    name: mongo_user_admin_pwd_$[DOCKER_SECRET_VERSION]

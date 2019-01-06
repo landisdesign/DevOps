@@ -1,0 +1,25 @@
+variables required by
+
+	stack:
+		secret key
+		web output port
+		stack name
+
+	mongodb:
+		backup host dir
+		backup name
+		replica set name
+
+secrets required by
+
+	mongodb:
+		user admin name/pwd
+		db admin name/pwd
+		backup name/pwd
+		cluster name/pwd
+
+tasks required
+
+	define environment variables
+	change secrets
+	back up database
