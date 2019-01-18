@@ -1,7 +1,7 @@
 version: "3.5"
 
 x-mongo-defaults: &mongo-defaults
-    image: "landisdesign/mongo-cluster:4.0.3-xenial"
+    image: "landisdesign/mongo-authenticated-cluster:4.0.3-xenial"
     deploy:
       resources:
         limits:
@@ -16,18 +16,12 @@ x-mongo-defaults: &mongo-defaults
       com.michael-landis-awakening.mongodb.backup-name: "$[MONGO_BACKUP_NAME]"
       com.michael-landis-awakening.mongodb.replica-name: "$[MONGO_REPLICA_NAME]"
     environment:
-      - MONGO_BACKUP_NAME
-      - MONGO_REPLICA_NAME
-      - MONGO_HOSTS
+      - MONGO_BACKUP_NAME=$[MONGO_BACKUP_NAME]
+      - MONGO_REPLICA_NAME=$[MONGO_REPLICA_NAME]
+      - MONGO_HOSTS=$[MONGO_HOSTS]
     secrets:
-      - mongo_backup_admin_name
-      - mongo_backup_admin_pwd
-      - mongo_cluster_admin_name
-      - mongo_cluster_admin_pwd
-      - mongo_db_admin_name
-      - mongo_db_admin_pwd
-      - mongo_user_admin_name
-      - mongo_user_admin_pwd
+      - mongo
+      - mongo_cluster
 
 services:
 
@@ -68,6 +62,7 @@ $[endloop:]
   mongo-shell:
     <<: *mongo-defaults
     image: "landisdesign/mongo-authenticated:4.0.3-xenial"
+    entrypoint: "tail -f /dev/null"
 
   terminal:
     image: "bash:4.0"
@@ -77,40 +72,16 @@ $[endloop:]
     networks:
       - webnet
     secrets:
-      - mongo_backup_admin_name
-      - mongo_backup_admin_pwd
-      - mongo_cluster_admin_name
-      - mongo_cluster_admin_pwd
-      - mongo_db_admin_name
-      - mongo_db_admin_pwd
-      - mongo_user_admin_name
-      - mongo_user_admin_pwd
+      - mongo
+      - mongo_cluster
 
 networks:
   webnet:
 
 secrets:
-  mongo_backup_admin_name:
+  mongo:
     external: true
-    name: mongo_backup_admin_name_$[DOCKER_SECRET_VERSION]
-  mongo_backup_admin_pwd:
+    name: mongo_$[DOCKER_SECRET_VERSION]
+  mongo_cluster:
     external: true
-    name: mongo_backup_admin_pwd_$[DOCKER_SECRET_VERSION]
-  mongo_cluster_admin_name:
-    external: true
-    name: mongo_cluster_admin_name_$[DOCKER_SECRET_VERSION]
-  mongo_cluster_admin_pwd:
-    external: true
-    name: mongo_cluster_admin_pwd_$[DOCKER_SECRET_VERSION]
-  mongo_db_admin_name:
-    external: true
-    name: mongo_db_admin_name_$[DOCKER_SECRET_VERSION]
-  mongo_db_admin_pwd:
-    external: true
-    name: mongo_db_admin_pwd_$[DOCKER_SECRET_VERSION]
-  mongo_user_admin_name:
-    external: true
-    name: mongo_user_admin_name_$[DOCKER_SECRET_VERSION]
-  mongo_user_admin_pwd:
-    external: true
-    name: mongo_user_admin_pwd_$[DOCKER_SECRET_VERSION]
+    name: mongo_cluster_$[DOCKER_SECRET_VERSION]

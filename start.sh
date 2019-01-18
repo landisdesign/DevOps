@@ -3,7 +3,7 @@ then
 	. ./define/host_env.sh "$(pwd)"
 fi
 
-if [ ! -f ./.env ]
+if [ ! -f ./env.sh ]
 then
 	. ./define/compose_env.sh
 fi

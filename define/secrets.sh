@@ -2,6 +2,7 @@ echo
 echo "Creating secrets..."
 echo
 
+# make sure COMPOSE_DIR is populated
 if [ -z "${COMPOSE_DIR+set}" ]
 then
 	. ./host_env.sh $(cd ..; pwd)
@@ -10,35 +11,57 @@ fi
 . "${COMPOSE_DIR}/libs/utils.sh"
 . "${COMPOSE_DIR}/libs/docker_utils.sh"
 
-build_name_value_list "${COMPOSE_DIR}/define/secrets_list.txt"
+secrets_key_file="${COMPOSE_DIR}/secret_key.sh"
 
-# Generate version string
-if builtin command -v md5sum > /dev/null
+if [ -f "${secrets_key_file}" ]
 then
-	md5_app=md5sum
+	. "${secrets_key_file}"
+	OLD_DOCKER_SECRET_VERSION="${DOCKER_SECRET_VERSION}"
 else
-	md5_app=md5
+	OLD_DOCKER_SECRET_VERSION=""
 fi
-secret_version=( $(echo "${names[@]} ${values[@]}" -n | ${md5_app}) )
-DOCKER_SECRET_VERSION="${secret_version[0]}"
 
-file="${COMPOSE_DIR}/secret_key.sh"
-echo "DOCKER_SECRET_VERSION=\"${DOCKER_SECRET_VERSION}\"; export DOCKER_SECRET_VERSION" > "${file}"
-. "${file}"
+secrets_names=("mongo" "mongo_cluster")
+
+secrets_files=()
+secrets_digest=""
+
+for i in ${!secrets_names[@]}
+do
+	secrets_name=${secrets_names[$i]}
+	secrets_list="${COMPOSE_DIR}/define/secrets_${secrets_name}.txt"
+	secrets_file="$(pwd)/secrets_${secrets_name}.sh"
+
+	build_name_value_list "${secrets_list}" "${secrets_file}"
+
+	secrets_md5=$(get_md5 "${secrets_file}")
+	secrets_digest="${secrets_digest} ${secrets_md5}"
+	secrets_files+=("${secrets_file}")
+done
+
+# compact all files' MD5 digests into one key
+DOCKER_SECRET_VERSION=$( echo "${secrets_digest}" | get_md5 - )
+
+echo "DOCKER_SECRET_VERSION=\"${DOCKER_SECRET_VERSION}\"; export DOCKER_SECRET_VERSION" > "${secrets_key_file}"
+if [ "${OLD_DOCKER_SECRET_VERSION}" ]
+then
+	echo "OLD_DOCKER_SECRET_VERSION=\"${OLD_DOCKER_SECRET_VERSION}\"; export OLD_DOCKER_SECRET_VERSION" >> "${secrets_key_file}"
+fi
+. "${secrets_key_file}"
 
 # Generate Secrets
 echo
-echo -n "Generating secrets with key ${DOCKER_SECRET_VERSION}"
+echo "Saving secrets files..."
 
-for i in ${!names[@]}
+for i in ${!secrets_names[@]}
 do
-	name=${names[$i]}_${DOCKER_SECRET_VERSION}
-	value=${values[$i]}
+	name=${secrets_names[$i]}_${DOCKER_SECRET_VERSION}
+	value=${secrets_files[$i]}
 	push_secret ${name} ${value}
-	echo -n "."
+	rm ${value}
+	echo "${name}"
 done
 
 echo
-echo
-echo "Secrets created with key ${DOCKER_SECRET_VERSION}"
+echo "Secrets saved"
 echo

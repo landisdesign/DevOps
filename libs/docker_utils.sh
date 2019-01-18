@@ -44,11 +44,21 @@ define_swarm(){
 #
 
 push_secret(){
-	if [ -z "${SWARM_MANAGER_NAME}" ]
+	if [ -f "$2" ]
 	then
-		echo $2 | docker secret create $1 - > /dev/null 2> /dev/null
+		if [ -z "${SWARM_MANAGER_NAME}" ]
+		then
+			docker secret create $1 $2 > /dev/null 2> /dev/null
+		else
+			docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 $2" > /dev/null 2> /dev/null
+		fi
 	else
-		echo $2 | docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 -" > /dev/null 2> /dev/null
+		if [ -z "${SWARM_MANAGER_NAME}" ]
+		then
+			echo $2 | docker secret create $1 - > /dev/null 2> /dev/null
+		else
+			echo $2 | docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 -" > /dev/null 2> /dev/null
+		fi
 	fi
 }
 
