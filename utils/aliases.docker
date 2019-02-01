@@ -1,0 +1,20 @@
+alias dm=docker-machine;
+
+dmenv(){
+	eval $(docker-machine env $1);
+}
+
+dsps(){
+	docker stack ps $1 --filter "desired-state=running" --format "table {{.Name}}\t{{.Node}}\t{{.CurrentState}}\t{{.Ports}}"
+}
+
+dsbash() {
+	if [ $# -eq 2 ]
+	then
+		task_name=$2
+		dmenv $(docker stack ps $1 --filter "name=$task_name" --filter "desired-state=running" --format "{{.Node}}")
+	else
+		task_name=$1
+	fi
+	docker exec -it $(docker ps --filter "name=$task_name" --format "{{.ID}}") bash
+}

@@ -12,3 +12,4 @@ do
 done
 
 echo "Mount points \"$@\" created on virtual machines ${vms[@]}"
+

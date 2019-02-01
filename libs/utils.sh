@@ -45,7 +45,7 @@ build_name_value_list(){
 
 	if [[ "${file}" ]]
 	then
-		echo "" > ${file}
+		echo -n "" > ${file}
 		for i in ${!names[@]}
 		do
 			echo "${names[$i]}=\"${values[$i]}\"; export ${names[$i]};" >> ${file}
