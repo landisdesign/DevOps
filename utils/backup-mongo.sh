@@ -1,3 +1,34 @@
+build_service_data(){
+	service_data=$(docker service inspect --format='{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.backup-name"}}!{{index (index .Spec.TaskTemplate.Networks 0).Target}}!{{.Spec.TaskTemplate.ContainerSpec.Hostname}}!{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.replica-name"}}' $(docker service ls -q) | awk -f ../libs/mongo-backup.awk)
+	service_data_backup=()
+	service_data_network=()
+	service_data_host=()
+	service_data_replica=()
+	service_data_description=()
+	while IFS= read -r service_data_line
+	do
+		service_data_fields=( ${service_data_line} )
+		service_data_backup+=(${service_data_fields[0]})
+		service_data_network+=(${service_data_fields[1]})
+		service_data_host+=(${service_data_fields[2]})
+		service_data_replica+=(${service_data_fields[3]:-'(none)'})
+	done <<< "${service_data}"
+	service_data_network=( $(docker inspect --format '{{.Name}}' ${service_data_network[@]}) )
+	for i in ${!service_data_backup[@]}
+	do
+		temp_description="Back up \"${service_data_backup[$i]}\" of "
+		if [ "${service_data_replica[$i]}" != '(none)' ]
+		then
+			temp_description="${temp_description}${service_data_replica[$i]}/"
+		fi
+		temp_description="${temp_description}${service_data_host[$i]} on ${service_data_network[i]}"
+		service_data_description+=("${temp_description}")
+	done
+	unset i
+	unset service_data_line
+	unset temp_description
+}
+
 if [ -f "../secret_key.sh" ]
 then
 	. ../secret_key.sh
@@ -11,95 +42,96 @@ else
 	return 1
 fi
 
+build_service_data
+
+backup_index=-1
+
 if [ $# -eq 1 ]
 then
-	backup_name=$1
-else
-	if [ "${MONGO_BACKUP_NAME}" ]
+	for i in ${!service_data_backup[@]}
+	do
+		if [ "$1" = "${service_data_backup[$i]}" ]
+		then
+			if [ ${backup_index} -ge 0 ]
+			then
+				echo
+				echo "More than one backup exists with the name \"$1\"."
+				backup_index=-2
+			elif [ ${backup_index} -eq -1 ]
+			then
+				backup_index=${i}
+			fi
+		fi
+	done
+	if [ $backup_index -eq -1 ]
 	then
-		backup_name="${MONGO_BACKUP_NAME}"
+		echo
+		echo "\"$1\" was not found as a backup label."
+		echo
+		backup_index=-2
+	fi
+fi
+
+if [ ${backup_index} -lt 0 ]
+then
+	backup_length=${#service_data_backup[@]}
+	if [ ${backup_length} -eq 1 ] && [ ${backup_index} -eq -1 ]
+	then
+		backup_index=0
 	else
-		echo "$0 requires one argument: backup name if env variable MONGO_BACKUP_NAME isn't set"
-		return 1
+		echo "Choose which backup to perform by entering a number from 1 to ${backup_length} (0 to exit):"
+		for i in ${!service_data_description[@]}
+		do
+			echo "( $((i + 1)) ) ${service_data_description[$i]}"
+		done
+		i=-1;
+		while [ "$i" -lt 0 ] 2>/dev/null || [ "$i" -gt "${backup_length}" ] 2>/dev/null
+		do
+			read -s i
+			if [ "$i" -eq 0 ]
+			then
+				echo
+				echo "Exiting without backing up"
+				echo
+				return
+			fi
+		done
+		backup_index=$(($i - 1))
 	fi
 fi
 
-backup_destination="/data/mongodb/backup/"
-replica_sets=()
-networks=()
-hosts=()
+backup_name=${service_data_backup[$backup_index]}
+backup_network=${service_data_network[$backup_index]}
+backup_hosts=${service_data_host[$backup_index]}
+backup_replica=${service_data_replica[$backup_index]}
 
-service_data=( $(docker service inspect --format='{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.backup-name"}} {{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.replica-name"}} {{index (index .Spec.TaskTemplate.Networks 0).Target}} {{.Spec.TaskTemplate.ContainerSpec.Hostname}}' $(docker service ls -q) | sed -n "s/^$backup_name //p") )
+echo
+echo "The following backup will be performed:"
+echo "  ${service_data_description[$backup_index]}"
+echo
 
-#populate arrays
-for i in ${!service_data[@]}
-do
-	if [ "${service_data[i]}" ]
-	then
-		case $(expr $i % 3) in
-			0) replica_sets+=(${service_data[i]});;
-			1) networks+=(${service_data[i]});;
-			2) hosts+=(${service_data[i]});;
-		esac
-	fi
-done
-
-#deduplicate arrays
-replica_sets=( $(printf "%s\n" ${replica_sets[@]} | awk '!x[$0]++') )
-networks=( $(printf "%s\n" ${networks[@]} | awk '!x[$0]++') )
-hosts=( $(printf "%s\n" ${hosts[@]} | awk '!x[$0]++') )
-
-if [ ${#hosts[@]} -eq 0 ]
-then
-	echo "No hosts found for backup named \"${backup_name}\""
-	return 1
-fi
-
-hosts=$(echo "${hosts[@]}" | sed 's/ /,/g')
-
-if [ ${#replica_sets[@]} -gt 1 ]
-then
-	echo "There can only be at most one replica set associated with a backup. Backup \"${backup_name}\" includes replica sets \"${replica_sets[@]}\""
-	return 1
-fi
-
-if [ ${#networks[@]} -eq 0 ]
-then
-	echo "No network is identified with backup \"${backup_name}\""
-	return 1
-fi
-
-networks=( $(docker inspect --format '{{.Name}}' ${networks[@]}) )
-
-if [ ${#networks[@]} -gt 1 ]
-then
-	echo "Backups can only access hosts who identify the same network first in their configuration. Backup \"${backup_name}\" identifies networks \"${networks[@]}\""
-	return 1
-fi
-
-docker_image=landisdesign/mongo-authenticated-backup:4.0.3-xenial
+backup_destination="/data/mongodb/backup/${backup_name}"
+docker_image=landisdesign/mongo-authenticated-utilities:4.0.3-xenial
 docker_service_name="mongo_backup_${backup_name}_$RANDOM"
 docker_args=(\
 	--name ${docker_service_name}\
-	--network ${networks}\
+	--network ${backup_network}\
 	--limit-memory "256MB"\
-	--mount type=bind,source=${backup_destination}${backup_name},destination=/data/mongodb/backup\
+	--mount type=bind,source=${backup_destination},destination=/data/mongodb/backup\
 	--secret source=mongo_${DOCKER_SECRET_VERSION},target=mongo\
 	--tty\
 	--entrypoint "bash"\
-	--env MONGO_HOSTS=${hosts}\
+	--env MONGO_HOSTS=${backup_hosts}\
 )
-if [ "${replica_sets}" ]
+if [ "${backup_replica}" != "(none)" ]
 then
-	echo "Backing up replica set \"${replica_sets}\" from primary member to ${backup_destination}${backup_name}"
-	docker_args+=(--env MONGO_REPLICA_NAME=${replica_sets})
+	echo "Backing up replica set \"${backup_replica}\" from primary member to ${backup_destination}"
+	docker_args+=(--env MONGO_REPLICA_NAME=${backup_replica})
 else
-	if [ ${#hosts[@]} -gt 1 ]
-	then
-		echo "Backing up replica set from nearest of the hosts \"${hosts[@]}\" to ${backup_destination}${backup_name}"
-	else
-		echo "Backing up database from ${hosts} to ${backup_destination}${backup_name}"
-	fi
+	case "$backup_hosts" in
+		*,*) echo "Backing up replica set from nearest of the hosts \"${backup_hosts}\" to ${backup_destination}" ;;
+		*) echo "Backing up database from ${backup_hosts} to ${backup_destination}" ;;
+	esac
 fi
 
 echo
@@ -118,7 +150,7 @@ echo
 echo "Starting backup process"
 echo
 
-docker exec -t $(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}") sh ./start.sh
+docker exec -t $(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}") sh ./backup.sh
 
 echo
 echo "Shutting down and removing service"

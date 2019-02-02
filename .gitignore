@@ -1,0 +1,6 @@
+**/.DS_Store
+/docker-compose.yml
+/env.sh
+/host_env.sh
+/secret_key.sh
+

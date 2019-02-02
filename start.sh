@@ -17,9 +17,7 @@ fi
 . ./secret_key.sh
 . ./env.sh
 
-cd templates
-awk -f ../define/translate.awk docker-compose.yml > ../docker-compose.yml
-cd ..
+awk -f libs/translate.awk templates/docker-compose.yml > docker-compose.yml
 
 echo
 echo "Deploying services..."
