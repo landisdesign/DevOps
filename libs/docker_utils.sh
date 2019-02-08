@@ -1,42 +1,16 @@
-define_swarm(){
+current_machine() {
+	docker-machine ls --format "{{.Name}} {{.Active}}" | awk 'BEGIN {m="-u"} $2=="*" {m=$1} END {print m}'
+}
 
-	if [ "${SWARM_MANAGER_NAME+set}" ]
+define_swarm() {
+	_machine_data=$(docker-machine ls --format="{{.Name}} {{.URL}}")
+	_ssh_machine=(${_machine_data}) # cheating to get first name from list
+	_manager_url=$(docker info --format="{{range .Swarm.RemoteManagers}} {{.Addr}} {{end}}" | head -n 1 | sed -n 's/^[^0-1]*\([^:]*\).*$/\1/p')
+	if [ -z "${_manager_url}" ]
 	then
-		read -p "The swarm is currently identified as running on ${SWARM_MANAGER_NAME:-the current machine}. Do you want to change it ? (y/n) " change
-		if [ "${change}" != "y" ]
-		then
-			return
-		fi
+		_manager_url=$(docker-machine ssh ${_ssh_machine} "docker info --format='{{range .Swarm.RemoteManagers}} {{.Addr}} {{end}}'" | head -n 1 | sed -n 's/^[^0-1]*\([^:]*\).*$/\1/p')
 	fi
-
-	test_secret_key="local__test"
-
-	echo
-	read -s -p "Make sure your docker swarm is up and running. Press Enter to continue."
-	echo
-	echo
-	read -p "Swarm manager name (current machine): " SWARM_MANAGER_NAME
-	while ! push_secret ${test_secret_key} "test"
-	do
-		if [ -z "${SWARM_MANAGER_NAME}" ]
-		then
-			echo "The current machine is not set up as a swarm manager."
-		else
-			echo "Machine ${SWARM_MANAGER_NAME} is not responding as a swarm manager."
-		fi
-		read -p "Please re-enter the swarm manager name (current machine): " SWARM_MANAGER_NAME
-	done
-
-	echo
-	if [ -z "${SWARM_MANAGER_NAME}" ]
-	then
-		echo "The current machine is identified as the swarm manager."
-	else
-		echo "Machine ${SWARM_MANAGER_NAME} is identified as the swarm manager."
-	fi
-	echo
-
-	remove_secret ${test_secret_key}
+	SWARM_MANAGER_NAME=$(printf "%s %s\n" ${_machine_data} | awk -v u=${_manager_url} '$2 ~ "(^|[^0-9])" u "([^0-9]|$)" {print $1}')
 }
 
 #
@@ -46,27 +20,54 @@ define_swarm(){
 push_secret(){
 	if [ -f "$2" ]
 	then
-		if [ -z "${SWARM_MANAGER_NAME}" ]
+		if [ "${SWARM_MANAGER_NAME}" ]
 		then
-			docker secret create $1 $2 > /dev/null 2> /dev/null
+			docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 $2" >/dev/null 2>/dev/null
 		else
-			docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 $2" > /dev/null 2> /dev/null
+			docker secret create $1 $2 >/dev/null 2>/dev/null
 		fi
 	else
-		if [ -z "${SWARM_MANAGER_NAME}" ]
+		if [ "${SWARM_MANAGER_NAME}" ]
 		then
-			echo $2 | docker secret create $1 - > /dev/null 2> /dev/null
+			echo $2 | docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 -" >/dev/null 2>/dev/null
 		else
-			echo $2 | docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret create $1 -" > /dev/null 2> /dev/null
+			echo $2 | docker secret create $1 - >/dev/null 2>/dev/null
 		fi
 	fi
 }
 
 remove_secret(){
-	if [ -z "${SWARM_MANAGER_NAME}" ]
+	if [ "${SWARM_MANAGER_NAME}" ]
 	then
-		docker secret rm $1 > /dev/null 2> /dev/null
+		docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret rm $1" >/dev/null 2>/dev/null
 	else
-		docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret rm $1" > /dev/null 2> /dev/null
+		docker secret rm $1 >/dev/null 2>/dev/null
+	fi
+}
+
+remove_secrets(){ # Returns names of secrets that couldn't be deleted
+	doomed_secrets=$@
+	if [ "${SWARM_MANAGER_NAME}" ]
+	then
+		docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret rm ${doomed_secrets} 2>&1" 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
+	else
+		docker secret rm ${doomed_secrets} 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
+	fi
+}
+
+get_secrets(){
+	filter_name=$1
+	shift
+	filters=()
+	for filter
+	do
+		filters+=("--filter=\"${filter_name}=${filter}\"")
+	done
+
+	if [ "${SWARM_MANAGER_NAME}" ]
+	then
+		docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret ls ${filters[@]} --format=\"{{.Name}}\""
+	else
+		docker secret ls ${filters[@]} --format={{.Name}}
 	fi
 }

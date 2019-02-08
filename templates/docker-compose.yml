@@ -20,8 +20,14 @@ x-mongo-defaults: &mongo-defaults
       - MONGO_REPLICA_NAME=$[MONGO_REPLICA_NAME]
       - MONGO_HOSTS=$[MONGO_HOSTS]
     secrets:
-      - mongo
-      - mongo_cluster
+      - mongo_user_admin_name
+      - mongo_user_admin_pwd
+      - mongo_db_admin_name
+      - mongo_db_admin_pwd
+      - mongo_backup_admin_name
+      - mongo_backup_admin_pwd
+      - mongo_cluster_admin_name
+      - mongo_cluster_admin_pwd
 
 services:
 
@@ -72,16 +78,40 @@ $[endloop:]
     networks:
       - webnet
     secrets:
-      - mongo
-      - mongo_cluster
+      - mongo_user_admin_name
+      - mongo_user_admin_pwd
+      - mongo_db_admin_name
+      - mongo_db_admin_pwd
+      - mongo_backup_admin_name
+      - mongo_backup_admin_pwd
+      - mongo_cluster_admin_name
+      - mongo_cluster_admin_pwd
 
 networks:
   webnet:
 
 secrets:
-  mongo:
+  mongo_user_admin_name:
     external: true
-    name: mongo_$[DOCKER_SECRET_VERSION]
-  mongo_cluster:
+    name: mongo_user_admin_name_v$[mongo_user_admin_name_SECRET_VERSION]
+  mongo_user_admin_pwd:
     external: true
-    name: mongo_cluster_$[DOCKER_SECRET_VERSION]
+    name: mongo_user_admin_pwd_v$[mongo_user_admin_pwd_SECRET_VERSION]
+  mongo_db_admin_name:
+    external: true
+    name: mongo_db_admin_name_v$[mongo_db_admin_name_SECRET_VERSION]
+  mongo_db_admin_pwd:
+    external: true
+    name: mongo_db_admin_pwd_v$[mongo_db_admin_pwd_SECRET_VERSION]
+  mongo_backup_admin_name:
+    external: true
+    name: mongo_backup_admin_name_v$[mongo_backup_admin_name_SECRET_VERSION]
+  mongo_backup_admin_pwd:
+    external: true
+    name: mongo_backup_admin_pwd_v$[mongo_backup_admin_pwd_SECRET_VERSION]
+  mongo_cluster_admin_name:
+    external: true
+    name: mongo_cluster_admin_name_v$[mongo_cluster_admin_name_SECRET_VERSION]
+  mongo_cluster_admin_pwd:
+    external: true
+    name: mongo_cluster_admin_pwd_v$[mongo_cluster_admin_pwd_SECRET_VERSION]

@@ -8,13 +8,19 @@ then
 	. ./define/compose_env.sh
 fi
 
-if [ ! -f ./secret_key.sh ]
+if [ ! -f ./secret_keys.sh ]
 then
-	. ./define/secrets.sh
+	cd define
+	if [ ! -f secrets_combined.txt ]
+	then
+		cat secrets_*.txt > secrets_combined.txt
+	fi
+	. ./secrets.sh -k ../secret_keys.sh secrets_combined.txt
+	cd ..
 fi
 
 . ./host_env.sh
-. ./secret_key.sh
+. ./secret_keys.sh
 . ./env.sh
 
 awk -f libs/translate.awk templates/docker-compose.yml > docker-compose.yml
@@ -23,13 +29,17 @@ echo
 echo "Deploying services..."
 echo
 
-commands="cd \"$(pwd)\"; DOCKER_SECRET_VERSION=${DOCKER_SECRET_VERSION} docker stack deploy -c docker-compose.yml ${STACK_NAME}"
+commands="cd \"$(pwd)\"; docker stack deploy -c docker-compose.yml ${STACK_NAME}"
 if [ "${SWARM_MANAGER_NAME}" ]
 then
 	docker-machine ssh ${SWARM_MANAGER_NAME} "${commands}"
 else
 	${commands}
 fi
+
+cd define
+./secrets -qr secrets_combined.txt
+cd ..
 
 echo
 echo "Stack ${STACK_NAME} deployed"
