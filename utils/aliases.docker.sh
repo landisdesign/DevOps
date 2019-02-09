@@ -70,3 +70,13 @@ dsbash() {
 		dmenv ${_current}
 	fi
 }
+
+db() {
+	if [ "$1" == "-v" ]
+	then
+		name=$(basename $(pwd))
+	else
+		name=$1
+	fi
+	docker build --no-cache -t=landisdesign/$name${2:+:$2} .
+}

@@ -1,3 +1,5 @@
+. ../libs/docker_utils.sh
+
 build_service_data(){
 	service_data=$(docker service inspect --format='{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.backup-name"}}!{{index (index .Spec.TaskTemplate.Networks 0).Target}}!{{.Spec.TaskTemplate.ContainerSpec.Hostname}}!{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.replica-name"}}' $(docker service ls -q) | awk -f ../libs/mongo-backup.awk)
 	service_data_backup=()
@@ -29,16 +31,26 @@ build_service_data(){
 	unset temp_description
 }
 
-if [ -f "../secret_key.sh" ]
+machine_data=( $(dsmachines) )
+current_machine=${machine_data[0]}
+swarm_manager=${machine_data[1]}
+
+if [ "${current_machine}" != "${swarm_manager}" ]
 then
-	. ../secret_key.sh
-	if ! docker secret inspect mongo_${DOCKER_SECRET_VERSION} 2>&1 1>/dev/null
+	eval $(docker-machine env "${swarm_manager}") 2>&1 1>/dev/null
+fi
+
+if [ -f "../secret_keys.sh" ]
+then
+	. ../secret_keys.sh
+	if ! docker secret inspect mongo_backup_admin_name_v${mongo_backup_admin_name_SECRET_VERSION} 2>&1 1>/dev/null\
+		|| ! docker secret inspect mongo_backup_admin_pwd_v${mongo_backup_admin_pwd_SECRET_VERSION} 2>&1 1>/dev/null
 	then
 		echo "mongo secrets aren't associated with the current secret_key.sh file. Rerun ../define/serets.sh to reassociate the names and passwords with Docker secrets."
 		return 1
 	fi
 else
-	echo "../secret_key.sh is missing. Rerun ../define/secrets.sh to associate names and passwords with Docker secrets."
+	echo "../secret_keys.sh is missing. Rerun ../define/secrets.sh to associate names and passwords with Docker secrets."
 	return 1
 fi
 
@@ -113,15 +125,16 @@ echo
 backup_destination="/data/mongodb/backup/${backup_name}"
 docker_image=landisdesign/mongo-authenticated-utilities:4.0.3-xenial
 docker_service_name="mongo_backup_${backup_name}_$RANDOM"
-docker_args=(\
-	--name ${docker_service_name}\
-	--network ${backup_network}\
-	--limit-memory "256MB"\
-	--mount type=bind,source=${backup_destination},destination=/data/mongodb/backup\
-	--secret source=mongo_${DOCKER_SECRET_VERSION},target=mongo\
-	--tty\
-	--entrypoint "bash"\
-	--env MONGO_HOSTS=${backup_hosts}\
+docker_args=( \
+	--name ${docker_service_name} \
+	--network ${backup_network} \
+	--limit-memory "256MB" \
+	--mount type=bind,source=${backup_destination},destination=/data/mongodb/backup \
+	--secret source=mongo_backup_admin_name_v${mongo_backup_admin_name_SECRET_VERSION},target=mongo_backup_admin_name \
+	--secret source=mongo_backup_admin_pwd_v${mongo_backup_admin_pwd_SECRET_VERSION},target=mongo_backup_admin_pwd \
+	--tty \
+	--entrypoint "bash" \
+	--env MONGO_HOSTS=${backup_hosts} \
 )
 if [ "${backup_replica}" != "(none)" ]
 then
@@ -137,18 +150,18 @@ fi
 echo
 echo "Starting service ${docker_service_name}..."
 echo
-docker service create ${docker_args[@]} ${docker_image}
 
-original_host=${DOCKER_MACHINE_NAME:--u}
-service_host=$(docker service ps "${docker_service_name}" --format "{{.Node}}")
-if [ "${original_host}" != "${service_host}" ]
-then
-	eval $(docker-machine env "${service_host}") 2>&1 1>/dev/null
-fi
+docker service create ${docker_args[@]} ${docker_image}
 
 echo
 echo "Starting backup process"
 echo
+
+service_host=$(docker service ps "${docker_service_name}" --format "{{.Node}}")
+if [ "${swarm_manager}" != "${service_host}" ]
+then
+	eval $(docker-machine env "${service_host}") 2>&1 1>/dev/null
+fi
 
 docker exec -t $(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}") sh ./backup.sh
 
@@ -156,11 +169,17 @@ echo
 echo "Shutting down and removing service"
 echo
 
-if [ "${original_host}" != "${service_host}" ]
+if [ "${service_host}" == "${swarm_manager}" ]
 then
-	eval $(docker-machine env "${original_host}") 2>&1 1>/dev/null
+	docker service rm ${docker_service_name} 1>/dev/null
+else
+	docker-machine ssh "${swarm_manager}" "docker service rm ${docker_service_name} 1>/dev/null"
 fi
-docker service rm ${docker_service_name} 1>/dev/null
 
-echo "Backup \"${backup_name}\" of $(if [ "${replica_sets}" ]; then echo "${replica_sets}/"; fi)${hosts} complete."
+if [ "${service_host}" != "${current_machine}" ]
+then
+	eval $(docker-machine env "${current_machine}") 2>&1 1>/dev/null
+fi
+
+echo "Backup \"${backup_name}\" of $(if [ "${backup_replica}" ]; then echo " ${backup_replica}/"; fi)${backup_hosts} complete."
 echo

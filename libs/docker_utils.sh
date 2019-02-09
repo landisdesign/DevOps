@@ -2,6 +2,17 @@ current_machine() {
 	docker-machine ls --format "{{.Name}} {{.Active}}" | awk 'BEGIN {m="-u"} $2=="*" {m=$1} END {print m}'
 }
 
+dsmachines() {
+	_machine_data="$(docker-machine ls --format='{{.Name}} {{.URL}} {{.Active}}')"
+	_ssh_machine=(${_machine_data}) # cheating to get first name from list
+	_manager_url=$(docker info --format="{{range .Swarm.RemoteManagers}} {{.Addr}} {{end}}" | head -n 1 | sed -n 's/^[^0-1]*\([^:]*\).*$/\1/p')
+	if [ -z "${_manager_url}" ]
+	then
+		_manager_url=$(docker-machine ssh ${_ssh_machine} "docker info --format='{{range .Swarm.RemoteManagers}} {{.Addr}} {{end}}'" | head -n 1 | sed -n 's/^[^0-1]*\([^:]*\).*$/\1/p')
+	fi
+	printf "%s %s %s\n" "${_machine_data}" | awk -v u=${_manager_url} 'BEGIN {a="-u"} $2 ~ "(^|[^0-9])" u "([^0-9]|$)" {m=$1} $3=="*" {a=$1} END {print a " " m}'
+}
+
 define_swarm() {
 	_machine_data=$(docker-machine ls --format="{{.Name}} {{.URL}}")
 	_ssh_machine=(${_machine_data}) # cheating to get first name from list

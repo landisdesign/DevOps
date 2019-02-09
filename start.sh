@@ -38,7 +38,7 @@ else
 fi
 
 cd define
-./secrets -qr secrets_combined.txt
+./secrets.sh -qr secrets_combined.txt
 cd ..
 
 echo
