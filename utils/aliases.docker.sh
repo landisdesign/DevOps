@@ -72,11 +72,34 @@ dsbash() {
 }
 
 db() {
-	if [ "$1" == "-v" ]
+	OPTIND=1
+	while getopts ":v:p" opt
+	do
+		case "${opt}" in
+			"v" ) version="${OPTARG}" ;;
+			"p" ) push="y" ;;
+			"?" )
+				echo "Invalid option: ${OPTARG}" >&2
+				exit 1
+				;;
+			":" )
+				echo "Invalid option: ${OPTARG} is missing an argument" >&2
+				exit 1
+		esac
+	done
+	shift $(($OPTIND - 1))
+
+	if [ "${version}" ]
 	then
-		name=$(basename $(pwd))
+		tag="$(basename $(pwd)):${version}"
 	else
-		name=$1
+		tag="$1"
 	fi
-	docker build --no-cache -t=landisdesign/$name${2:+:$2} .
+	tag="landisdesign/${tag}"
+
+	docker build --no-cache -t=${tag} .
+	if [ "${push}" ]
+	then
+		docker push ${tag}
+	fi
 }
