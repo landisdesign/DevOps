@@ -26,8 +26,11 @@ END {
 	for (indices in services) {
 		split(indices, fields, SUBSEP);
 		printf "%s %s %s", fields[1], fields[3], services[indices]
-		if (fields[1]) {
+		if (fields[2]) {
 			printf " %s", fields[2]
+		}
+		else {
+			printf " (none)"
 		}
 		printf "\n"
 	}

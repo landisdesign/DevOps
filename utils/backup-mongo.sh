@@ -1,21 +1,8 @@
 . ../libs/docker_utils.sh
+. ../libs/mongo_utils.sh
 
-build_service_data(){
-	service_data=$(docker service inspect --format='{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.backup-name"}}!{{index (index .Spec.TaskTemplate.Networks 0).Target}}!{{.Spec.TaskTemplate.ContainerSpec.Hostname}}!{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.replica-name"}}' $(docker service ls -q) | awk -f ../libs/mongo-backup.awk)
-	service_data_backup=()
-	service_data_network=()
-	service_data_host=()
-	service_data_replica=()
+build_service_descriptions(){
 	service_data_description=()
-	while IFS= read -r service_data_line
-	do
-		service_data_fields=( ${service_data_line} )
-		service_data_backup+=(${service_data_fields[0]})
-		service_data_network+=(${service_data_fields[1]})
-		service_data_host+=(${service_data_fields[2]})
-		service_data_replica+=(${service_data_fields[3]:-'(none)'})
-	done <<< "${service_data}"
-	service_data_network=( $(docker inspect --format '{{.Name}}' ${service_data_network[@]}) )
 	for i in ${!service_data_backup[@]}
 	do
 		temp_description="Back up \"${service_data_backup[$i]}\" of "
@@ -26,12 +13,12 @@ build_service_data(){
 		temp_description="${temp_description}${service_data_host[$i]} on ${service_data_network[i]}"
 		service_data_description+=("${temp_description}")
 	done
-	unset i
-	unset service_data_line
 	unset temp_description
+	unset i
 }
 
-machine_data=( $(dsmachines) )
+declare -a machine_data
+IFS=' ' read -a machine_data <<<"$(dsmachines) "
 current_machine=${machine_data[0]}
 swarm_manager=${machine_data[1]}
 
@@ -54,8 +41,8 @@ else
 	return 1
 fi
 
-build_service_data
-
+get_service_data
+build_service_descriptions
 backup_index=-1
 
 if [ $# -eq 1 ]
