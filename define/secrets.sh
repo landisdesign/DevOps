@@ -375,7 +375,7 @@ then
 
 	get_secrets "name" ${secrets_filters[@]} >./~secret-names.txt
 
-	doomed_secrets=( $( awk 'function older(f, i,n) {i = match(f, /[0-9]+$/); if (i) {n=substr(f,1,i-1);if (n in v) return (0+substr(f,i)) < v[n]} } FNR == NR {v[$1] = (0+$2)} FNR != NR && older($0)' ./~secrets-current.txt ./~secret-names.txt ) )
+	doomed_secrets=( $( awk 'function different(f, i,n) {i = match(f, /[0-9]+$/); if (i) {n=substr(f,1,i-1);if (n in v) return (0+substr(f,i)) != v[n]} } FNR == NR {v[$1] = (0+$2)} FNR != NR && different($0)' ./~secrets-current.txt ./~secret-names.txt ) )
 
 	rm ./~secret-names.txt ./~secrets-current.txt
 

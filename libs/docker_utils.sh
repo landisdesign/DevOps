@@ -57,12 +57,12 @@ remove_secret(){
 }
 
 remove_secrets(){ # Returns names of secrets that couldn't be deleted
-	doomed_secrets=$@
+	doomed_secrets=($@)
 	if [ "${SWARM_MANAGER_NAME}" ]
 	then
-		docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret rm ${doomed_secrets} 2>&1" 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
+		docker-machine ssh "${SWARM_MANAGER_NAME}" "docker secret rm ${doomed_secrets[@]} 2>&1" 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
 	else
-		docker secret rm ${doomed_secrets} 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
+		docker secret rm ${doomed_secrets[@]} 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
 	fi
 }
 
@@ -72,7 +72,7 @@ get_secrets(){
 	filters=()
 	for filter
 	do
-		filters+=("--filter=\"${filter_name}=${filter}\"")
+		filters+=(--filter "${filter_name}=${filter}")
 	done
 
 	if [ "${SWARM_MANAGER_NAME}" ]
