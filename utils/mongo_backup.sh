@@ -1,3 +1,4 @@
+#!/bin/bash
 . ../libs/docker_utils.sh
 . ../libs/mongo_utils.sh
 
@@ -34,11 +35,11 @@ then
 		|| ! docker secret inspect mongo_backup_admin_pwd_v${mongo_backup_admin_pwd_SECRET_VERSION} 2>&1 1>/dev/null
 	then
 		echo "mongo secrets aren't associated with the current secret_key.sh file. Rerun ../define/serets.sh to reassociate the names and passwords with Docker secrets."
-		return 1
+		exit 1
 	fi
 else
 	echo "../secret_keys.sh is missing. Rerun ../define/secrets.sh to associate names and passwords with Docker secrets."
-	return 1
+	exit 1
 fi
 
 get_service_data
@@ -92,7 +93,7 @@ then
 				echo
 				echo "Exiting without backing up"
 				echo
-				return
+				exit
 			fi
 		done
 		backup_index=$(($i - 1))
@@ -120,7 +121,7 @@ docker_args=( \
 	--secret source=mongo_backup_admin_name_v${mongo_backup_admin_name_SECRET_VERSION},target=mongo_backup_admin_name \
 	--secret source=mongo_backup_admin_pwd_v${mongo_backup_admin_pwd_SECRET_VERSION},target=mongo_backup_admin_pwd \
 	--tty \
-	--entrypoint "bash" \
+	--entrypoint "tail -f </dev/null" \
 	--env MONGO_HOSTS=${backup_hosts} \
 )
 if [ "${backup_replica}" != "(none)" ]

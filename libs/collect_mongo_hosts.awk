@@ -18,10 +18,6 @@ $1 && $3 {
 	next
 }
 
-{
-	# Do not collect services that have no backup name or host identified
-}
-
 END {
 	for (indices in services) {
 		split(indices, fields, SUBSEP);

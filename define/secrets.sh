@@ -7,6 +7,7 @@ usage(){
 	echo "  secrets -n input-file"
 	echo "  secrets -v [-s secret-name]... input-file"
 	echo "  secrets [-qr] [-d data-file] [-k key-file] [-s secret-name]... input-file"
+	echo "  secrets [-r] [-d data-file] [-k key-file] [-u name=value]... input-file"
 	echo
 	echo "  -d data-file     Data file. The name of a file to output updated secret"
 	echo "                   names and values. If not provided, updates will be saved"
@@ -21,16 +22,28 @@ usage(){
 	echo "                   version of the command or an error will result."
 	echo
 	echo "  -q               Quiet. Does not request or save new data. Only perform the"
-	echo "                   operations requested by -k or -r."
+	echo "                   operations requested by -k or -r. This option is superfluous"
+	echo "                   when -u options are provided."
 	echo
 	echo "  -r               Remove secrets. Removes the previous versions of the"
 	echo "                   specified secrets, or the previous versions of all secrets"
 	echo "                   identified in the input file(s) if no -s options are"
 	echo "                   provided."
 	echo
-	echo "  -s secret-name   Secret name. The name of the secret to be updated. This"
+	echo "  -s secret-name   Secret name. The name of the secret to be managed. This"
 	echo "                   option can be repeated with different secret names. If not"
 	echo "                   provided, all secrets in the provided files will be managed."
+	echo "                   If -s options are included, -u options cannot be included."
+	echo "                   identifying secret names with -s presumes that any value"
+	echo "                   updates are interactive, while -u presumes that any value"
+	echo "                   updates are not."
+	echo
+	echo "  -u name=value    Update the named with the provided value. If one or more of"
+	echo "                   these options are included, secrets will not be interactive,"
+	echo "                   as if the -q option were included. -s options are not"
+	echo "                   permitted in the same command as -u options. -d, -r and -k"
+	echo "                   options will be executed after the secrets named in -u"
+	echo "                   options are updated."
 	echo
 	echo "  -v               Version. Return the current version number for the secrets"
 	echo "                   identified by -s option, or all version numbers, then exit."
@@ -59,17 +72,19 @@ then
 fi
 
 secrets_requested=()
+secrets_values=()
 key_file=""
 version_requested=0
 remove_old_secrets=0
 return_names=0
 quiet=0
+automated=0
 
 blocking_argument=""
 last_argument=""
 
 OPTIND=1
-while getopts ":s:k:d:nqrv" opt
+while getopts ":k:d:nqrs:u:v" opt
 do
 	if [ "${blocking_argument}" ]
 	then
@@ -117,7 +132,24 @@ do
 			;;
 
 		"s" )
+			if [ "${#secrets_values[@]}" -gt 0 ]
+			then
+				echo "Invalid option: -s options cannot be present if -u options are included." 1>&2
+				exit 1
+			fi
 			secrets_requested+=(${OPTARG})
+			;;
+
+		"u" )
+			if [ "${#secrets_values[@]}" -ne "${#secrets_requested[@]}" ]
+			then
+				echo "Invalid option: -u options cannot be present if -s options are included." 1>&2
+				exit 1
+			fi
+			IFS='=' read _name _value <<<"${OPTARG}"
+			secrets_requested+=( ${_name} )
+			secrets_values+=( "${_value}" )
+			automated=1
 			;;
 
 		"v" )
@@ -170,6 +202,7 @@ do
 	secrets_default+=(${list_params[3]:-""})
 done < "$file"
 
+# Map request secret names to indices in secrets lists
 if [ ${#secrets_requested[@]} -eq 0 ]
 then
 	secrets_requested_index=( $( seq 0 $(( ${#secrets_name[@]} - 1 )) ) )
@@ -188,6 +221,7 @@ else
 	done
 fi
 
+# Handle -n option and exit
 if [ "${return_names}" -eq 1 ]
 then
 	for name in ${secrets_name[@]}
@@ -247,36 +281,42 @@ updated_secrets_name=()
 updated_secrets_value=()
 updated_secrets_version=()
 
-if [ "${quiet}" -eq 0 ]
+if [ "${quiet}" -eq 0 ] || [ "${automated}" -eq 1 ]
 then
 
 	for i in ${!secrets_requested_index[@]}
 	do
 		j=${secrets_requested_index[$i]}
-		default_value="${secrets_default[$j]}"
-		default_text="${secrets_text[$j]}"
 
-		if [ "${default_value}" ]
+		if [ "${automated}" -eq 0 ]
 		then
-			prompt="${default_text} (${default_value}):"
-		else
-			prompt="${default_text}: "
-		fi
+			default_value="${secrets_default[$j]}"
+			default_text="${secrets_text[$j]}"
 
-		value=""
-		while [ -z "${value}" ]
-		do
-			read -p "${prompt}" value
-			if [ -z "${value}" ]
+			if [ "${default_value}" ]
 			then
-				if [ "${default_value}" ]
-				then
-					value="${default_value}"
-				else
-					echo "  ${default_text} cannot be empty. Please enter a value."
-				fi
+				prompt="${default_text} (${default_value}):"
+			else
+				prompt="${default_text}: "
 			fi
-		done
+
+			value=""
+			while [ -z "${value}" ]
+			do
+				read -p "${prompt}" value
+				if [ -z "${value}" ]
+				then
+					if [ "${default_value}" ]
+					then
+						value="${default_value}"
+					else
+						echo "  ${default_text} cannot be empty. Please enter a value."
+					fi
+				fi
+			done
+		else
+			value="${secrets_values[$i]}"
+		fi
 
 		updated_secrets_name+=("${secrets_name[$j]}")
 		updated_secrets_value+=("${value}")
@@ -325,7 +365,7 @@ done
 #	Output updated secret names and values for retrieval by calling program
 #
 
-if [ "${quiet}" -eq 0 ]
+if [ "${quiet}" -eq 0 ] || [ "${automated}" -eq 1 ]
 then
 	if [ "${data_file}" ]
 	then
@@ -375,7 +415,7 @@ then
 
 	get_secrets "name" ${secrets_filters[@]} >./~secret-names.txt
 
-	doomed_secrets=( $( awk 'function different(f, i,n) {i = match(f, /[0-9]+$/); if (i) {n=substr(f,1,i-1);if (n in v) return (0+substr(f,i)) != v[n]} } FNR == NR {v[$1] = (0+$2)} FNR != NR && different($0)' ./~secrets-current.txt ./~secret-names.txt ) )
+	doomed_secrets=( $( awk 'function different(f, i,n) {i = match(f, /_v[0-9]+$/); if (i) {n=substr(f,1,i+1);if (n in v) return (0+substr(f,i+2)) != v[n]} } FNR == NR {v[$1] = (0+$2)} FNR != NR && different($0)' ./~secrets-current.txt ./~secret-names.txt ) )
 
 	rm ./~secret-names.txt ./~secrets-current.txt
 

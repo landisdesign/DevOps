@@ -16,8 +16,8 @@ dsmachines() {
 }
 
 dsps() {
-	_machine_data=$(dsmachines)
-	_machine_data=( ${_machine_data} )
+	declare -a _machine_data
+	IFS=' ' read -a _machine_data <<<"$(dsmachines) "
 	_current=${_machine_data[0]}
 	_manager=${_machine_data[1]}
 	_stack_name=$1
@@ -33,8 +33,8 @@ dsbash() {
 	if [ $# -eq 2 ]
 	then
 		_task_name=$2
-		_machine_data=$(dsmachines)
-		_machine_data=( ${_machine_data} )
+		declare -a _machine_data
+		IFS=' ' read -a _machine_data <<<"$(dsmachines) "
 		_current=${_machine_data[0]}
 		_manager=${_machine_data[1]}
 		if [ "${_current}" == "${_manager}" ]
@@ -45,7 +45,7 @@ dsbash() {
 		fi
 		if [ -z "${_stack_vm}" ]
 		then
-			echo "No task found with name ${_task_name}" >&2
+			echo "No task found with name ${_task_name} in stack $1" >&2
 			return
 		fi
 		if [ "${_current}" != "${_stack_vm}" ]
@@ -62,7 +62,7 @@ dsbash() {
 	then
 		docker exec -it ${_task_id} bash
 	else
-		echo "No task found with name ${_task_name}" >&2
+		echo "No task found with name ${_task_name} on this machine" >&2
 		return
 	fi
 	if [ "${_current}" != "${_stack_vm}" ]
@@ -73,11 +73,15 @@ dsbash() {
 
 db() {
 	OPTIND=1
-	while getopts ":v:p" opt
+	cache=--no-cache
+	push=""
+	while getopts ":v:pc" opt
 	do
 		case "${opt}" in
 			"v" ) version="${OPTARG}" ;;
 			"p" ) push="y" ;;
+			"c" ) cache="" ;;
+
 			"?" )
 				echo "Invalid option: ${OPTARG}" >&2
 				exit 1
@@ -97,7 +101,7 @@ db() {
 	fi
 	tag="landisdesign/${tag}"
 
-	docker build --no-cache -t=${tag} .
+	docker build ${cache} -t=${tag} .
 	if [ "${push}" ]
 	then
 		docker push ${tag}

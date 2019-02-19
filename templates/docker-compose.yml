@@ -67,8 +67,7 @@ $[loop:MONGO_HOSTS>MONGO_HOST]
 $[endloop:]
   mongo-shell:
     <<: *mongo-defaults
-    image: "landisdesign/mongo-authenticated:4.0.3-xenial"
-    entrypoint: "tail -f /dev/null"
+    image: "landisdesign/mongo-authenticated-utilities:4.0.3-xenial"
 
   terminal:
     image: "bash:4.0"

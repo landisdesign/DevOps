@@ -13,7 +13,13 @@ get_service_data() {
 		service_data_network+=(${service_data_fields[1]})
 		service_data_host+=(${service_data_fields[2]})
 		service_data_replica+=(${service_data_fields[3]})
-		unset service_data_line
+		unset service_data_fields
 	done <<< "$(awk -f ../libs/translate_network.awk ./~network_data.txt ./~backup_data.txt )"
+	unset service_data_line
 	rm ./~network_data.txt ./~backup_data.txt
+}
+
+get_password_secret_names() {
+	contents="$(cat ${1:-/dev/stdin})"
+	echo "$contents" | sed -n 's/^\([^ ]*\) *mongo_\([^ ]*\)_name$/\1 mongo_\2_pwd/p'
 }
