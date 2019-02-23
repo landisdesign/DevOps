@@ -62,7 +62,10 @@ $[loop:MONGO_HOSTS>MONGO_HOST]
   $[MONGO_HOST]:
     <<: *mongo-defaults
     hostname: $[MONGO_HOST]
-    entrypoint: "tail -f /dev/null"
+#    entrypoint:
+#      - tail
+#      - -f
+#      - /dev/null
 
 $[endloop:]
   mongo-shell:

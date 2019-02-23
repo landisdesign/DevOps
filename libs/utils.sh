@@ -83,7 +83,7 @@ get_input() {
 			"e" ) empty_allowed="y" ;;
 			"s" ) read_opts=-s ;;
 			"f" ) regexp="${OPTARG}"
-			      sedarg="s/\\(${OPTARG}\\)/\\1/p"
+			      sedarg="s/^${OPTARG}\$/&/p"
 			      ;;
 
 			":" )
@@ -110,6 +110,10 @@ get_input() {
 	while [ -z "${INPUT}" ]
 	do
 		read ${read_opts} -p "${prompt} " INPUT
+		if [ "${read_opts}" = '-s' ]
+		then
+			echo
+		fi
 		INPUT="${INPUT:-${default}}"
 		if [ -z "${INPUT}" ]
 		then
@@ -120,17 +124,16 @@ get_input() {
 				echo "  Please provide a response."
 				continue
 			fi
-		then
 		fi
-		if [ -z "${regexp}" ]
+		if [ "${regexp}" ]
 		then
-			if [ "${INPUT}" != "$(echo "${INPUT}" | sed ${regexp})" ]
+			if [ "${INPUT}" != "$(echo "${INPUT}" | sed -n "${sedarg}")" ]
 			then
 				if [ "${read_opts}" = "-s" ]
 				then
-					echo "  Your response must only contain the characters in the regex ${regexp}."
+					echo "  Your response must only contain the characters specified by the regex ${regexp}."
 				else
-					echo "  \"${INPUT}\" must only contain the characters in the regex ${regexp}."
+					echo "  \"${INPUT}\" must only contain the characters specified by the regex ${regexp}."
 				fi
 				INPUT=""
 			fi

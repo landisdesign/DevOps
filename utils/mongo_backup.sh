@@ -121,7 +121,6 @@ docker_args=( \
 	--secret source=mongo_backup_admin_name_v${mongo_backup_admin_name_SECRET_VERSION},target=mongo_backup_admin_name \
 	--secret source=mongo_backup_admin_pwd_v${mongo_backup_admin_pwd_SECRET_VERSION},target=mongo_backup_admin_pwd \
 	--tty \
-	--entrypoint "tail -f </dev/null" \
 	--env MONGO_HOSTS=${backup_hosts} \
 )
 if [ "${backup_replica}" != "(none)" ]
@@ -157,7 +156,7 @@ echo
 echo "Shutting down and removing service"
 echo
 
-if [ "${service_host}" == "${swarm_manager}" ]
+if [ "${service_host}" = "${swarm_manager}" ]
 then
 	docker service rm ${docker_service_name} 1>/dev/null
 else

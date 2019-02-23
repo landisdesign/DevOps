@@ -29,23 +29,24 @@ dsps() {
 	fi
 }
 
-dsbash() {
-	if [ $# -eq 2 ]
+ds() {
+	_command="$1"
+	if [ $# -eq 3 ]
 	then
-		_task_name=$2
+		_task_name=$3
 		declare -a _machine_data
 		IFS=' ' read -a _machine_data <<<"$(dsmachines) "
 		_current=${_machine_data[0]}
 		_manager=${_machine_data[1]}
 		if [ "${_current}" == "${_manager}" ]
 		then
-			_stack_vm=$(docker stack ps $1 --filter "name=$_task_name" --filter "desired-state=running" --format "{{.Node}}" 2>/dev/null)
+			_stack_vm=$(docker stack ps $2 --filter "name=$_task_name" --filter "desired-state=running" --format "{{.Node}}" 2>/dev/null)
 		else
-			_stack_vm=$(docker-machine ssh "${_manager}" "docker stack ps $1 --filter 'name=$_task_name' --filter 'desired-state=running' --format '{{.Node}}'" 2>/dev/null)
+			_stack_vm=$(docker-machine ssh "${_manager}" "docker stack ps $2 --filter 'name=$_task_name' --filter 'desired-state=running' --format '{{.Node}}'" 2>/dev/null)
 		fi
 		if [ -z "${_stack_vm}" ]
 		then
-			echo "No task found with name ${_task_name} in stack $1" >&2
+			echo "No task found with name ${_task_name} in stack $2" >&2
 			return
 		fi
 		if [ "${_current}" != "${_stack_vm}" ]
@@ -55,12 +56,16 @@ dsbash() {
 	else
 		_current=""
 		_stack_vm=""
-		_task_name=$1
+		_task_name=$2
 	fi
 	_task_id=$(docker ps --filter "name=$_task_name" --format "{{.ID}}" 2>/dev/null)
 	if [ "${_task_id}" ]
 	then
-		docker exec -it ${_task_id} bash
+		case "${_command}" in
+			"bash" ) docker exec -it ${_task_id} bash ;;
+			"logs" ) docker logs --tail all --follow ${_task_id} ;;
+			* ) echo "ds: ${_command} is not a valid argument." >&2 ;;
+		esac
 	else
 		echo "No task found with name ${_task_name} on this machine" >&2
 		return
