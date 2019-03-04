@@ -25,7 +25,7 @@
 . ../libs/docker_utils.sh
 . ../libs/mongo_utils.sh
 
-awk_make_unique='{a[$1]=1} END {for (i in a) print i}'
+awk_make_unique='{a[$0]=1} END {for (i in a) print i}'
 replica_empty_value='(none)'
 
 service_description() {
@@ -192,17 +192,17 @@ read -p "Are you changing your password or others? (Y/o) " response
 
 if [ "${response}" = "o" ] || [ "${response}" = "O" ]
 then
-	get_input -f ${db_filter} "Which database do you authenticate to?" "admin"
-	auth_db-="${INPUT}"
-	get_input -f ${user_filter} "Admin name:"
+	get_input -f "${db_filter}" "Which database do you authenticate to?" "admin"
+	auth_db="${INPUT}"
+	get_input -f "${user_filter}" "Admin name:"
 	auth_user="${INPUT}"
-	get_input -f ${user_filter} -s "Admin password:"
+	get_input -f "${user_filter}" -s "Admin password:"
 	auth_pwd="${INPUT}"
 	echo
-	read -p "Are the other admins in the same database? (Y/n)" INPUT
+	read -p "Are the other users in the same database? (Y/n)" INPUT
 	if [ "${INPUT}" = "n" ] || [ "${INPUT}" = "N" ]
 	then
-		get_input -f ${db_filter} "Which database are the users located in?" ${auth_db}
+		get_input -f "${db_filter}" "Which database are the users located in?" ${auth_db}
 		user_db="${INPUT}"
 	else
 		user_db="${auth_db}"
@@ -210,17 +210,17 @@ then
 	while [ "${INPUT}" ] || [ "${#user_names[@]}" -eq 0 ]
 	do
 		echo
-		get_input -e -f ${user_filter} "User $(( ${#user_names[@]} + 1)) (Return to exit loop):"
+		get_input -e -f "${user_filter}" "User $(( ${#user_names[@]} + 1)) (Return to exit loop):"
 		if [ "${INPUT}" ]
 		then
 			user_names+=( "${INPUT}" )
-			get_input -f ${user_filter} -s "User $(( ${#user_names[@]})) new password:"
+			get_input -f "${user_filter}" -s "User $(( ${#user_names[@]})) new password:"
 			user_new_pwds+=( "${INPUT}" )
 		fi
 	done
 else
-	get_input -f ${db_filter} "Database:" "admin"
-	auth_db-="${INPUT}"
+	get_input -f "${db_filter}" "Database:" "admin"
+	auth_db="${INPUT}"
 	user_db="${auth_db}"
 	get_input -f "${user_filter}"  "User name:"
 	auth_user="${INPUT}"
@@ -283,7 +283,8 @@ do
 		fi
 		current_network="${network}"
 		docker network connect "${current_network}" "${container_id}"
-		docker exec ${container_id} sh /secret_search.sh mongo_*_name ${auth_user} ${user_names[@]} 1>>./~valid_secrets.txt 2>>./~invalid_secrets.txt
+		docker exec ${container_id} sh /secret_search.sh mongo_*_name ${auth_user} 2>>./~invalid_secrets.txt 1>/dev/null
+		docker exec ${container_id} sh /secret_search.sh mongo_*_name ${user_names[@]} 2>>./~invalid_secrets.txt | awk '{for (i=2;i<=NF;i++)gsub(/_name$/, "_pwd", $i);}1' 1>>./~valid_secrets.txt
 	fi
 done
 
@@ -293,13 +294,15 @@ then
 	echo "The following user names could not be found:" >&2
 	echo "$(sed -n 's/^[^:]*: \(.*\)$/\1/gp' < ./~invalid_secrets.txt | tr -d "'" | tr -s ' ' '\n' | awk "${awk_make_unique}" | sort -f | awk '{print "  " $0}')" >&2
 	echo "None of the passwords were changed."
-	echo >&2
-	docker service rm ${docker_service_name}
+	switch_to_machine "${swarm_manager}"
+	docker service rm ${docker_service_name} > /dev/null
 	rm ./~invalid_secrets.txt ./~valid_secrets.txt
 	switch_to_machine "${starting_machine}"
 	exit 1
 fi
 rm ./~invalid_secrets.txt
+
+
 
 #
 #	7. Set up options for change_password.sh
@@ -327,16 +330,16 @@ echo "Updating services"
 failed_services=()
 successful_services=()
 
-for i in ${!services[@]}
+for i in ${!hosts[@]}
 do
 	if [ "${networks[$i]}" != "${current_network}" ]
 	then
 		docker network disconnect "${current_network}" "${container_id}"
-		current_network="${network}"
+		current_network="${networks[$i]}"
 		docker network connect "${current_network}" "${container_id}"
 	fi
-	docker exec ${container_id} sh /change_password.sh ${change_password_args[@]} -h ${hosts[$i]} 2>./~password_error${i}.txt
-	if [ $(ls -n ./~error${i}.txt | awk '{print $5}') -gt "0" ]
+	docker exec ${container_id} sh /change_password.sh ${change_password_args[@]} -h ${hosts[$i]} 1>/dev/null 2>./~password_error${i}.txt
+	if [ $(ls -n ./~password_error${i}.txt | awk '{print $5}') -gt "0" ]
 	then
 		echo " ! ${hosts[$i]}"
 		failed_services+=( $i )
@@ -365,12 +368,16 @@ then
 
 	if [ ${#successful_services[@]} -eq 0 ]
 	then
+		echo "Shutting down utility service ${docker_service_name}..." >&2
 		echo "Passwords and secrets have not been updated." >&2
+		switch_to_machine "${swarm_manager}"
+		docker service rm ${docker_service_name}
 		rm -f ./~valid_secrets.txt
+		switch_to_machine "${starting_machine}"
 		exit 1
 	else
 		prompt -p "Your updated services are out of sync with your secrets. Do you want to update your secrets? Doing so will put your other services out of sync. (y/N) " INPUT
-		if [ "${INPUT}" != "N" ] && [ "${INPUT}" != "n" ]
+		if [ "${INPUT}" != "Y" ] && [ "${INPUT}" != "y" ]
 		then
 			echo "Passwords have been updated on the following services:"
 			for i in ${successful_services[@]}
@@ -382,11 +389,16 @@ then
 			do
 				echo " * $(service_description ${service_index[$i]})"
 			done
+			switch_to_machine "${swarm_manager}"
+			echo "Shutting down utility service ${docker_service_name}..."
+			docker service rm ${docker_service_name}
 			rm -f ./~valid_secrets.txt
+			switch_to_machine "${starting_machine}"
 			exit 1
 		fi
 	fi
 fi
+rm -f ./~password_error*.txt
 
 #
 #	10. Update secrets
@@ -403,13 +415,27 @@ do
 	echo "${user_names[$i]} ${user_new_pwds[$1]}" >> ./~password_data.txt
 done
 
-while read password secret <<<"$(awk 'NR==FNR {u[$1]=$2} NR!=FNR {for (i=2;i<=NF;i++) print  $i, u[$1]}' ./~password_data.txt ./~valid_secrets.txt)"
-do
-	echo " * ${secret}"
-	push_secret "${secret}" "${password}"
-done
+switch_to_machine "${swarm_manager}"
 
+secret_args=( -k ../secret_keys.sh )
+
+
+secrets="$(awk 'NR==FNR {u[$1]=$2} NR!=FNR && ($1 in u) {for (i=2;i<=NF;i++) print $i, u[$1]}' ./~password_data.txt ./~valid_secrets.txt)"
+while read name value
+do
+	secret_args+=( -u "${name}=${value}" )
+done <<<"${secrets}"
+
+secret_args+=( ../define/secrets_combined.txt )
+
+../define/secrets.sh ${secret_args[@]}
+
+echo
+echo "Shutting down utility service ${docker_service_name}..."
+
+docker service rm ${docker_service_name} 1>/dev/null
 rm -f ./~password_data.txt ./~valid_secrets.txt
+switch_to_machine "${starting_machine}"
 
 echo
 echo "Password update completed. Please back up affected services to keep those changes recorded upon restart."

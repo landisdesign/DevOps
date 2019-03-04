@@ -76,6 +76,11 @@ get_md5() {
 }
 
 get_input() {
+	local empty_allowed
+	local read_opts
+	local regexp
+	local sedarg
+
 	OPTIND=1
 	while getopts ":esf:" opt
 	do
@@ -98,8 +103,8 @@ get_input() {
 	done
 	shift $((OPTIND - 1))
 
-	prompt="$1"
-	default="$2"
+	local prompt="$1"
+	local default="$2"
 	INPUT=""
 
 	if [ "${default}" ]

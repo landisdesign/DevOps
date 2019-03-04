@@ -111,6 +111,19 @@ echo "  ${service_data_description[$backup_index]}"
 echo
 
 backup_destination="/data/mongodb/backup/${backup_name}"
+if [ -e "${backup_destination}" ]
+then
+	if [ ! -d "${backup_destination}" ]
+	then
+		echo "${backup_destination} is not a directory. Backup cannot be performed here." >&2
+		exit 1
+	fi
+else
+	echo "Creating backup directory ${backup_destination}"
+	echo
+	mkdir "${backup_destination}"
+fi
+
 docker_image=landisdesign/mongo-authenticated-utilities:4.0.3-xenial
 docker_service_name="mongo_backup_${backup_name}_$RANDOM"
 docker_args=( \

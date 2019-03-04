@@ -1,6 +1,6 @@
 get_service_data() {
 	docker inspect --format "{{.Id}} {{.Name}}" $(docker network ls -q) > ./~network_data.txt
-	docker service inspect --format '{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.backup-name"}}!{{index (index .Spec.TaskTemplate.Networks 0).Target}}!{{.Spec.TaskTemplate.ContainerSpec.Hostname}}!{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.replica-name"}}' $(docker service ls -q) | awk -f ../libs/collect_mongo_hosts.awk > ./~backup_data.txt
+	docker service inspect --format '{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.backup-name"}}!{{index (index .Spec.TaskTemplate.Networks 0).Target}}!{{.Spec.TaskTemplate.ContainerSpec.Hostname}}!{{index .Spec.TaskTemplate.ContainerSpec.Labels "com.michael-landis-awakening.mongodb.replica-name"}}' $(docker service ls -q) 2>/dev/null | awk -f ../libs/collect_mongo_hosts.awk > ./~backup_data.txt
 	service_data_backup=()
 	service_data_network=()
 	service_data_host=()
