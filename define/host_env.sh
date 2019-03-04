@@ -11,11 +11,11 @@ fi
 
 
 . "${COMPOSE_DIR}/libs/docker_utils.sh"
-define_swarm
+dsmachines
 
 file="${COMPOSE_DIR}/host_env.sh"
 
-echo "SWARM_MANAGER_NAME='${SWARM_MANAGER_NAME}'; export SWARM_MANAGER_NAME;" > "${file}"
+echo "SWARM_MANAGER_MACHINE_NAME='${SWARM_MANAGER_MACHINE_NAME}'; export SWARM_MANAGER_MACHINE_NAME;" > "${file}"
 echo "COMPOSE_DIR='${COMPOSE_DIR}'; export COMPOSE_DIR;" >> "${file}"
 chmod 777 "${file}"
 

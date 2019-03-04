@@ -23,6 +23,8 @@ fi
 . ./secret_keys.sh
 . ./env.sh
 
+. ./libs/docker_utils.sh
+
 awk -f libs/translate.awk templates/docker-compose.yml > docker-compose.yml
 
 echo
@@ -30,17 +32,17 @@ echo "Deploying services..."
 echo
 
 commands="cd \"$(pwd)\"; docker stack deploy -c docker-compose.yml ${STACK_NAME}"
-if [ "${SWARM_MANAGER_NAME}" ]
-then
-	docker-machine ssh ${SWARM_MANAGER_NAME} "${commands}"
-else
-	${commands}
-fi
 
-cd define
-./secrets.sh -qr secrets_combined.txt
-cd ..
+dsmachines
+original_machine_name="${CURRENT_DOCKER_MACHINE_NAME}"
+switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
+docker stack deploy -c docker-compose.yml ${STACK_NAME}
 
 echo
 echo "Stack ${STACK_NAME} deployed"
-echo
+
+cd ./define
+./secrets.sh -qr ./secrets_combined.txt
+cd ..
+
+switch_to_machine "${original_machine_name}"

@@ -38,25 +38,14 @@ service_description() {
 	echo -n "${replica_desc}${service_data_host[$1]} on network ${service_data_network[$1]}"
 }
 
-declare -a machine_data
-IFS=' ' read -a machine_data <<<"$(dsmachines) "
-starting_machine=${machine_data[0]}
-swarm_manager=${machine_data[1]}
-current_machine=${starting_machine}
-
-switch_to_machine() {
-	if [ "$1" != "${current_machine}" ]
-	then
-		eval $(docker-machine env "$1") 2>&1 1>/dev/null
-		current_machine="$1"
-	fi
-}
+dsmachines
+starting_machine_name="${CURRENT_DOCKER_MACHINE_NAME}"
 
 #
 #	2. Identify the MongoDB services in this swarm and which to update
 #
 
-switch_to_machine "${swarm_manager}"
+switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 get_service_data
 
 case ${#service_data_host[@]} in
@@ -64,7 +53,7 @@ case ${#service_data_host[@]} in
 		echo >&2
 		echo "No mongo services with backup labels could be found" >&2
 		echo >&2
-		switch_to_machine "${starting_machine}"
+		switch_to_machine "${starting_machine_name}"
 		exit 1
 		;;
 	1)	# If only one service, no need to choose -- just use it
@@ -94,7 +83,7 @@ case ${#service_data_host[@]} in
 				echo
 				echo "Exiting without changing passwords"
 				echo
-				switch_to_machine "${starting_machine}"
+				switch_to_machine "${starting_machine_name}"
 				exit
 			fi
 			service_index="$(echo "${service_index}" | tr -s ',' ' ')"
@@ -255,9 +244,9 @@ echo
 
 docker service create ${docker_args[@]} ${docker_secrets[@]} ${docker_image}
 
-service_machine="$(docker service ps "${docker_service_name}" --format "{{.Node}}")"
+service_machine_name="$(docker service ps "${docker_service_name}" --format "{{.Node}}")"
 
-switch_to_machine "${service_machine}"
+switch_to_machine "${service_machine_name}"
 
 container_id="$(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}")"
 
@@ -294,10 +283,10 @@ then
 	echo "The following user names could not be found:" >&2
 	echo "$(sed -n 's/^[^:]*: \(.*\)$/\1/gp' < ./~invalid_secrets.txt | tr -d "'" | tr -s ' ' '\n' | awk "${awk_make_unique}" | sort -f | awk '{print "  " $0}')" >&2
 	echo "None of the passwords were changed."
-	switch_to_machine "${swarm_manager}"
+	switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 	docker service rm ${docker_service_name} > /dev/null
 	rm ./~invalid_secrets.txt ./~valid_secrets.txt
-	switch_to_machine "${starting_machine}"
+	switch_to_machine "${starting_machine_name}"
 	exit 1
 fi
 rm ./~invalid_secrets.txt
@@ -370,10 +359,10 @@ then
 	then
 		echo "Shutting down utility service ${docker_service_name}..." >&2
 		echo "Passwords and secrets have not been updated." >&2
-		switch_to_machine "${swarm_manager}"
+		switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 		docker service rm ${docker_service_name}
 		rm -f ./~valid_secrets.txt
-		switch_to_machine "${starting_machine}"
+		switch_to_machine "${starting_machine_name}"
 		exit 1
 	else
 		prompt -p "Your updated services are out of sync with your secrets. Do you want to update your secrets? Doing so will put your other services out of sync. (y/N) " INPUT
@@ -389,11 +378,11 @@ then
 			do
 				echo " * $(service_description ${service_index[$i]})"
 			done
-			switch_to_machine "${swarm_manager}"
+			switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 			echo "Shutting down utility service ${docker_service_name}..."
 			docker service rm ${docker_service_name}
 			rm -f ./~valid_secrets.txt
-			switch_to_machine "${starting_machine}"
+			switch_to_machine "${starting_machine_name}"
 			exit 1
 		fi
 	fi
@@ -415,7 +404,7 @@ do
 	echo "${user_names[$i]} ${user_new_pwds[$1]}" >> ./~password_data.txt
 done
 
-switch_to_machine "${swarm_manager}"
+switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 
 secret_args=( -k ../secret_keys.sh )
 
@@ -430,12 +419,11 @@ secret_args+=( ../define/secrets_combined.txt )
 
 ../define/secrets.sh ${secret_args[@]}
 
-echo
 echo "Shutting down utility service ${docker_service_name}..."
 
 docker service rm ${docker_service_name} 1>/dev/null
 rm -f ./~password_data.txt ./~valid_secrets.txt
-switch_to_machine "${starting_machine}"
+switch_to_machine "${starting_machine_name}"
 
 echo
 echo "Password update completed. Please back up affected services to keep those changes recorded upon restart."

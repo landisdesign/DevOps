@@ -4,7 +4,7 @@ dmenv() {
 	eval $(docker-machine env $1);
 }
 
-dsmachines() {
+dms() {
 	_machine_data="$(docker-machine ls --format='{{.Name}} {{.URL}} {{.Active}}')"
 	_ssh_machine=(${_machine_data}) # cheating to get first name from list
 	_manager_url=$(docker info --format="{{range .Swarm.RemoteManagers}} {{.Addr}} {{end}}" | head -n 1 | sed -n 's/^[^0-1]*\([^:]*\).*$/\1/p')

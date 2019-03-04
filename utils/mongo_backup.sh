@@ -18,15 +18,11 @@ build_service_descriptions(){
 	unset i
 }
 
-declare -a machine_data
-IFS=' ' read -a machine_data <<<"$(dsmachines) "
-current_machine=${machine_data[0]}
-swarm_manager=${machine_data[1]}
+dsmachines
 
-if [ "${current_machine}" != "${swarm_manager}" ]
-then
-	eval $(docker-machine env "${swarm_manager}") 2>&1 1>/dev/null
-fi
+current_machine="${CURRENT_DOCKER_MACHINE_NAME}"
+
+switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 
 if [ -f "../secret_keys.sh" ]
 then
@@ -157,11 +153,7 @@ echo
 echo "Starting backup process"
 echo
 
-service_host=$(docker service ps "${docker_service_name}" --format "{{.Node}}")
-if [ "${swarm_manager}" != "${service_host}" ]
-then
-	eval $(docker-machine env "${service_host}") 2>&1 1>/dev/null
-fi
+switch_to_machine "$(docker service ps "${docker_service_name}" --format "{{.Node}}")"
 
 docker exec -t $(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}") sh ./backup.sh
 
@@ -169,17 +161,11 @@ echo
 echo "Shutting down and removing service"
 echo
 
-if [ "${service_host}" = "${swarm_manager}" ]
-then
-	docker service rm ${docker_service_name} 1>/dev/null
-else
-	docker-machine ssh "${swarm_manager}" "docker service rm ${docker_service_name} 1>/dev/null"
-fi
+switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 
-if [ "${service_host}" != "${current_machine}" ]
-then
-	eval $(docker-machine env "${current_machine}") 2>&1 1>/dev/null
-fi
+docker service rm ${docker_service_name} 1>/dev/null
+
+switch_to_machine "${current_machine}"
 
 echo "Backup \"${backup_name}\" of $(if [ "${backup_replica}" ]; then echo " ${backup_replica}/"; fi)${backup_hosts} complete."
 echo

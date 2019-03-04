@@ -365,6 +365,9 @@ done
 #	Output updated secret names and values for retrieval by calling program
 #
 
+dsmachines
+original_machine="${CURRENT_DOCKER_MACHINE_NAME}"
+
 if [ "${quiet}" -eq 0 ] || [ "${automated}" -eq 1 ]
 then
 	if [ "${data_file}" ]
@@ -379,10 +382,7 @@ then
 		#	Put updated secrets into swarm
 		#
 
-		if [ -z "${SWARM_MANAGER_NAME:+set}" ]
-		then
-			define_swarm
-		fi
+		switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 
 		echo
 		echo "Updating secrets..."
@@ -413,6 +413,8 @@ then
 		echo "${filter_value} ${updated_secrets_version[$i]}" >> ./~secrets-current.txt
 	done
 
+	switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
+
 	get_secrets "name" ${secrets_filters[@]} >./~secret-names.txt
 
 	doomed_secrets=( $( awk 'function different(f, i,n) {i = match(f, /_v[0-9]+$/); if (i) {n=substr(f,1,i+1);if (n in v) return (0+substr(f,i+2)) != v[n]} } FNR == NR {v[$1] = (0+$2)} FNR != NR && different($0)' ./~secrets-current.txt ./~secret-names.txt ) )
@@ -421,7 +423,8 @@ then
 
 	if [ "${#doomed_secrets[@]}" -gt 0 ]
 	then
-		retained_secrets=( $( remove_secrets ${doomed_secrets[@]} ) )
+		define -a retained_secrets
+		IFS=' ' read -a retained_secrets <<<"$( remove_secrets ${doomed_secrets[@]} ) "
 
 		echo "Old secrets removed"
 		echo
@@ -440,3 +443,5 @@ then
 		echo
 	fi
 fi
+
+switch_to_machine "${original_machine}"
