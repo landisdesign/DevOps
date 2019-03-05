@@ -5,21 +5,26 @@ get_service_data() {
 	service_data_network=()
 	service_data_host=()
 	service_data_replica=()
+	service_data_description=()
 	while IFS= read -r service_data_line
 	do
-		declare -a service_data_fields
-		IFS=' ' read -a service_data_fields <<<"${service_data_line} "
-		service_data_backup+=(${service_data_fields[0]})
-		service_data_network+=(${service_data_fields[1]})
-		service_data_host+=(${service_data_fields[2]})
-		service_data_replica+=(${service_data_fields[3]})
-		unset service_data_fields
+		IFS=' ' read _backup _network _host _replica <<<"${service_data_line} "
+		service_data_backup+=(${_backup})
+		service_data_network+=(${_network})
+		service_data_host+=(${_host})
+		service_data_replica+=(${_replica})
+		if [ "${_replica}" = "(none)" ]
+		then
+			_desc=""
+		else
+			_desc="replica set \"${_replica}\" on "
+		fi
+		if [ "$1" = "-b" ]
+		then
+			_desc="Back up \"${_backup}\" of ${_desc}"
+		fi
+		service_data_description+=("${_desc}${_replica} on network ${_network}")
 	done <<< "$(awk -f ../libs/translate_network.awk ./~network_data.txt ./~backup_data.txt )"
-	unset service_data_line
+	unset service_data_line _backup _network _host _replica _desc
 	rm ./~network_data.txt ./~backup_data.txt
-}
-
-get_password_secret_names() {
-	contents="$(cat ${1:-/dev/stdin})"
-	echo "$contents" | sed -n 's/^\([^ ]*\) *mongo_\([^ ]*\)_name$/\1 mongo_\2_pwd/p'
 }

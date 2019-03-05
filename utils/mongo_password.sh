@@ -26,17 +26,6 @@
 . ../libs/mongo_utils.sh
 
 awk_make_unique='{a[$0]=1} END {for (i in a) print i}'
-replica_empty_value='(none)'
-
-service_description() {
-	if [ "${service_data_replica[$1]}" == "${replica_empty_value}" ]
-	then
-		replica_desc=""
-	else
-		replica_desc="replica set \"${service_data_replica[$1]}\" on "
-	fi
-	echo -n "${replica_desc}${service_data_host[$1]} on network ${service_data_network[$1]}"
-}
 
 dsmachines
 starting_machine_name="${CURRENT_DOCKER_MACHINE_NAME}"
@@ -72,7 +61,7 @@ case ${#service_data_host[@]} in
 		echo
 		for i in ${!service_data_host}
 		do
-			echo "$(($i + 1)) ) $(service_description $i)"
+			echo "$(($i + 1)) ) ${service_data_description[$i]}"
 		done
 		echo
 		while [ -z "${service_index}" ]
@@ -141,7 +130,7 @@ declare -a networks
 for i in ${service_index[@]}
 do
 	networks+=( "${service_data_network[$i]}" )
-	if [ "${service_data_replica[$i]}" = "${replica_empty_value}" ]
+	if [ "${service_data_replica[$i]}" = "(none)" ]
 	then
 		hosts+=( "${service_data_host[$i]}" )
 	else
@@ -154,7 +143,7 @@ echo
 echo "Passwords will be changed on:"
 for i in ${service_index[@]}
 do
-	echo " * $(service_description $i)"
+	echo " * ${service_data_description[$i]}"
 done
 echo
 
@@ -371,12 +360,12 @@ then
 			echo "Passwords have been updated on the following services:"
 			for i in ${successful_services[@]}
 			do
-				echo " * $(service_description ${service_index[$i]})"
+				echo " * ${service_data_description[${service_index[$i]}]}"
 			done
 			echo "Passwords have not been changed on the following services:"
 			for i in ${failed_services[@]}
 			do
-				echo " * $(service_description ${service_index[$i]})"
+				echo " * ${service_data_description[${service_index[$i]}]}"
 			done
 			switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 			echo "Shutting down utility service ${docker_service_name}..."

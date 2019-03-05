@@ -2,22 +2,6 @@
 . ../libs/docker_utils.sh
 . ../libs/mongo_utils.sh
 
-build_service_descriptions(){
-	service_data_description=()
-	for i in ${!service_data_backup[@]}
-	do
-		temp_description="Back up \"${service_data_backup[$i]}\" of "
-		if [ "${service_data_replica[$i]}" != '(none)' ]
-		then
-			temp_description="${temp_description}${service_data_replica[$i]}/"
-		fi
-		temp_description="${temp_description}${service_data_host[$i]} on ${service_data_network[i]}"
-		service_data_description+=("${temp_description}")
-	done
-	unset temp_description
-	unset i
-}
-
 dsmachines
 
 current_machine="${CURRENT_DOCKER_MACHINE_NAME}"
@@ -38,8 +22,7 @@ else
 	exit 1
 fi
 
-get_service_data
-build_service_descriptions
+get_service_data -b
 backup_index=-1
 
 if [ $# -eq 1 ]
