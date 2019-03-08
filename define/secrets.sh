@@ -384,7 +384,6 @@ then
 
 		switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 
-		echo
 		echo "Updating secrets..."
 		for i in ${!updated_secrets_name[@]}
 		do

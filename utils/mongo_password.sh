@@ -6,16 +6,15 @@
 #
 # Basic code structure is:
 #
-# 1. Define functions to DRY
+# 1. Define functions/variables for DRYing
 # 2. Identify the mongo services deployed on this swarm, and which services to update
 # 3. Get the database, user name and updated password information
-# 4. Create command line options for putting all current mongo name and password secrets into utility docker container
-# 5. Start the utility service
-# 6. Validate that the users are located in secrets accessible to all identified services
-# 7. Set up environment variables for password change
-# 8. Cycle through services and update passwords
-# 9. Check for errors in password changes in services
-# 10. Update secrets
+# 4. Start utility service with the mongo_* name and pwd secrets
+# 5. Validate that the users are located in secrets accessible to all identified services
+# 6. Set up environment variables for password change
+# 7. Cycle through services and update passwords
+# 8. Check for errors in password changes in services
+# 9. Update secrets
 
 #
 #	1. Define functions to DRY
@@ -28,7 +27,14 @@
 awk_make_unique='{a[$0]=1} END {for (i in a) print i}'
 
 dsmachines
+
 starting_machine_name="${CURRENT_DOCKER_MACHINE_NAME}"
+
+clean_up() {
+	destroy_utility_service
+	rm -f ./~invalid_secrets.txt ./~password_data.txt ./~password_error*.txt ./~valid_secrets.txt
+	switch_to_machine "${starting_machine_name}"
+}
 
 #
 #	2. Identify the MongoDB services in this swarm and which to update
@@ -167,6 +173,7 @@ user_db=""
 
 # Get new names and passwords
 read -p "Are you changing your password or others? (Y/o) " response
+echo
 
 if [ "${response}" = "o" ] || [ "${response}" = "O" ]
 then
@@ -177,7 +184,7 @@ then
 	get_input -f "${user_filter}" -s "Admin password:"
 	auth_pwd="${INPUT}"
 	echo
-	read -p "Are the other users in the same database? (Y/n)" INPUT
+	read -p "Are the other users in the same database? (Y/n) " INPUT
 	if [ "${INPUT}" = "n" ] || [ "${INPUT}" = "N" ]
 	then
 		get_input -f "${db_filter}" "Which database are the users located in?" ${auth_db}
@@ -191,8 +198,9 @@ then
 		get_input -e -f "${user_filter}" "User $(( ${#user_names[@]} + 1)) (Return to exit loop):"
 		if [ "${INPUT}" ]
 		then
-			user_names+=( "${INPUT}" )
-			get_input -f "${user_filter}" -s "User $(( ${#user_names[@]})) new password:"
+			_temp_user_name="${INPUT}"
+			user_names+=( "${_temp_user_name}" )
+			get_input -f "${user_filter}" -s "New password for ${_temp_user_name}:"
 			user_new_pwds+=( "${INPUT}" )
 		fi
 	done
@@ -208,62 +216,30 @@ else
 	get_input -f "${user_filter}" -s "New password:"
 	user_new_pwds+=( "${INPUT}" )
 fi
+echo
 
 #
-#	4. Create command line options for putting all current mongo name and password secrets into utility docker container
+#	4. Start utility service with the mongo_* name and pwd secrets
 #
 
 declare -a docker_secrets
 IFS=' ' read -a docker_secrets <<<"$(../define/secrets.sh -v ../define/secrets_combined.txt | awk '/^mongo_[^ ]*(_name|pwd) / {printf ("--secret source=%s_v%s,target=%s ", $1, $2, $1)}')"
+create_utility_service "${networks[0]}" ${docker_secrets[@]}
 
 #
-#	5. Start the utility service
+#	5. Validate that the users are located in secrets accessible to all identified services
 #
 
-docker_image=landisdesign/mongo-authenticated-utilities:4.0.3-xenial
-docker_service_name="mongo_password_$RANDOM"
-docker_args=( \
-	--name ${docker_service_name} \
-	--limit-memory "256MB" \
-)
-
-echo
-echo "Starting up utility service ${docker_service_name}"
-echo
-
-docker service create ${docker_args[@]} ${docker_secrets[@]} ${docker_image}
-
-service_machine_name="$(docker service ps "${docker_service_name}" --format "{{.Node}}")"
-
-switch_to_machine "${service_machine_name}"
-
-container_id="$(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}")"
-
-#
-#	6. Validate that the users are located in secrets accessible to all identified services
-#
-
-echo
 echo "Ensuring that users exist in the secrets available on the networks being updated..."
 
 rm -f ./~valid_secrets.txt ./~invalid_secrets.txt
 touch ./~valid_secrets.txt ./~invalid_secrets.txt
 
-current_network=""
-
 for network in ${networks[@]}
 do
-	if [ "${network}" != "${current_network}" ]
-	then
-		if [ "${current_network}" ]
-		then
-			docker network disconnect "${current_network}" "${container_id}"
-		fi
-		current_network="${network}"
-		docker network connect "${current_network}" "${container_id}"
-		docker exec ${container_id} sh /secret_search.sh mongo_*_name ${auth_user} 2>>./~invalid_secrets.txt 1>/dev/null
-		docker exec ${container_id} sh /secret_search.sh mongo_*_name ${user_names[@]} 2>>./~invalid_secrets.txt | awk '{for (i=2;i<=NF;i++)gsub(/_name$/, "_pwd", $i);}1' 1>>./~valid_secrets.txt
-	fi
+	switch_utility_service_network "${network}"
+	execute_utility_process sh /secret_search.sh mongo_*_name ${auth_user} 2>>./~invalid_secrets.txt 1>/dev/null
+	execute_utility_process sh /secret_search.sh mongo_*_name ${user_names[@]} 2>>./~invalid_secrets.txt | awk '{for (i=2;i<=NF;i++)gsub(/_name$/, "_pwd", $i);}1' 1>>./~valid_secrets.txt
 done
 
 if [ $(ls -n ./~invalid_secrets.txt | awk '{print $5}') -gt "0" ]
@@ -272,18 +248,13 @@ then
 	echo "The following user names could not be found:" >&2
 	echo "$(sed -n 's/^[^:]*: \(.*\)$/\1/gp' < ./~invalid_secrets.txt | tr -d "'" | tr -s ' ' '\n' | awk "${awk_make_unique}" | sort -f | awk '{print "  " $0}')" >&2
 	echo "None of the passwords were changed."
-	switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
-	docker service rm ${docker_service_name} > /dev/null
-	rm ./~invalid_secrets.txt ./~valid_secrets.txt
-	switch_to_machine "${starting_machine_name}"
+	echo
+	clean_up
 	exit 1
 fi
-rm ./~invalid_secrets.txt
-
-
 
 #
-#	7. Set up options for change_password.sh
+#	6. Set up options for change_password.sh
 #
 #	Host information will be added for each cycle through the list of services chosen.
 #
@@ -299,7 +270,7 @@ do
 done
 
 #
-#	8. Cycle through services and update passwords
+#	7. Cycle through services and update passwords
 #
 
 echo
@@ -310,13 +281,8 @@ successful_services=()
 
 for i in ${!hosts[@]}
 do
-	if [ "${networks[$i]}" != "${current_network}" ]
-	then
-		docker network disconnect "${current_network}" "${container_id}"
-		current_network="${networks[$i]}"
-		docker network connect "${current_network}" "${container_id}"
-	fi
-	docker exec ${container_id} sh /change_password.sh ${change_password_args[@]} -h ${hosts[$i]} 1>/dev/null 2>./~password_error${i}.txt
+	switch_utility_service_network "${networks[$i]}"
+	execute_utility_process sh /change_password.sh ${change_password_args[@]} -h ${hosts[$i]} 2>./~password_error${i}.txt 1>/dev/null 
 	if [ $(ls -n ./~password_error${i}.txt | awk '{print $5}') -gt "0" ]
 	then
 		echo " ! ${hosts[$i]}"
@@ -328,62 +294,55 @@ do
 done
 
 #
-#	9. Check for errors in password changes in services
+#	8. Check for errors in password changes in services
 #
 
 if [ ${#failed_services[@]} -gt 0 ]
 then
-	echo >&2
 	echo "Passwords were not changed on the following services:" >&2
+	echo >&2
 	for i in ${!failed_services[@]}
 	do
-		echo >&2
 		echo "${hosts[$i]}:" >&2
 		cat ./~password_error${i}.txt >&2
+		echo >&2
 	done
-	rm -f ./~password_error*.txt
-	echo >&2
 
 	if [ ${#successful_services[@]} -eq 0 ]
 	then
-		echo "Shutting down utility service ${docker_service_name}..." >&2
 		echo "Passwords and secrets have not been updated." >&2
-		switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
-		docker service rm ${docker_service_name}
-		rm -f ./~valid_secrets.txt
-		switch_to_machine "${starting_machine_name}"
+		echo >&2
+		clean_up
 		exit 1
 	else
 		prompt -p "Your updated services are out of sync with your secrets. Do you want to update your secrets? Doing so will put your other services out of sync. (y/N) " INPUT
+		echo >&2
 		if [ "${INPUT}" != "Y" ] && [ "${INPUT}" != "y" ]
 		then
-			echo "Passwords have been updated on the following services:"
+			echo "Passwords have been updated on the following services:" >&2
 			for i in ${successful_services[@]}
 			do
-				echo " * ${service_data_description[${service_index[$i]}]}"
+				echo " * ${service_data_description[${service_index[$i]}]}" >&2
 			done
-			echo "Passwords have not been changed on the following services:"
+			echo "Passwords have not been changed on the following services:" >&2
 			for i in ${failed_services[@]}
 			do
-				echo " * ${service_data_description[${service_index[$i]}]}"
+				echo " * ${service_data_description[${service_index[$i]}]}" >&2
 			done
-			switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
-			echo "Shutting down utility service ${docker_service_name}..."
-			docker service rm ${docker_service_name}
-			rm -f ./~valid_secrets.txt
-			switch_to_machine "${starting_machine_name}"
+			echo >&2
+			clean_up
 			exit 1
 		fi
 	fi
+else
+	echo
+	echo "Services updated"
+	echo
 fi
-rm -f ./~password_error*.txt
 
 #
-#	10. Update secrets
+#	9. Update secrets
 #
-
-echo
-echo "Updating secrets"
 
 rm -f ./~password_data.txt
 touch ./~password_data.txt
@@ -393,10 +352,7 @@ do
 	echo "${user_names[$i]} ${user_new_pwds[$1]}" >> ./~password_data.txt
 done
 
-switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
-
 secret_args=( -k ../secret_keys.sh )
-
 
 secrets="$(awk 'NR==FNR {u[$1]=$2} NR!=FNR && ($1 in u) {for (i=2;i<=NF;i++) print $i, u[$1]}' ./~password_data.txt ./~valid_secrets.txt)"
 while read name value
@@ -408,12 +364,7 @@ secret_args+=( ../define/secrets_combined.txt )
 
 ../define/secrets.sh ${secret_args[@]}
 
-echo "Shutting down utility service ${docker_service_name}..."
+clean_up
 
-docker service rm ${docker_service_name} 1>/dev/null
-rm -f ./~password_data.txt ./~valid_secrets.txt
-switch_to_machine "${starting_machine_name}"
-
-echo
 echo "Password update completed. Please back up affected services to keep those changes recorded upon restart."
 echo

@@ -103,12 +103,7 @@ else
 	mkdir "${backup_destination}"
 fi
 
-docker_image=landisdesign/mongo-authenticated-utilities:4.0.3-xenial
-docker_service_name="mongo_backup_${backup_name}_$RANDOM"
 docker_args=( \
-	--name ${docker_service_name} \
-	--network ${backup_network} \
-	--limit-memory "256MB" \
 	--mount type=bind,source=${backup_destination},destination=/data/mongodb/backup \
 	--secret source=mongo_backup_admin_name_v${mongo_backup_admin_name_SECRET_VERSION},target=mongo_backup_admin_name \
 	--secret source=mongo_backup_admin_pwd_v${mongo_backup_admin_pwd_SECRET_VERSION},target=mongo_backup_admin_pwd \
@@ -119,6 +114,7 @@ if [ "${backup_replica}" != "(none)" ]
 then
 	echo "Backing up replica set \"${backup_replica}\" from primary member to ${backup_destination}"
 	docker_args+=(--env MONGO_REPLICA_NAME=${backup_replica})
+	backup_hosts="${backup_replica}/${backup_hosts}"
 else
 	case "$backup_hosts" in
 		*,*) echo "Backing up replica set from nearest of the hosts \"${backup_hosts}\" to ${backup_destination}" ;;
@@ -126,29 +122,12 @@ else
 	esac
 fi
 
-echo
-echo "Starting service ${docker_service_name}..."
-echo
-
-docker service create ${docker_args[@]} ${docker_image}
-
-echo
-echo "Starting backup process"
-echo
-
-switch_to_machine "$(docker service ps "${docker_service_name}" --format "{{.Node}}")"
-
-docker exec -t $(docker ps --filter "name=${docker_service_name}" --format "{{.ID}}") sh ./backup.sh
-
-echo
-echo "Shutting down and removing service"
-echo
-
-switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
-
-docker service rm ${docker_service_name} 1>/dev/null
+create_utility_service "${backup_network}" ${docker_args[@]}
+execute_utility_process sh ./backup.sh
+destroy_utility_service
 
 switch_to_machine "${current_machine}"
 
-echo "Backup \"${backup_name}\" of $(if [ "${backup_replica}" ]; then echo " ${backup_replica}/"; fi)${backup_hosts} complete."
+echo
+echo "Backup \"${backup_name}\" of ${backup_hosts} complete."
 echo
