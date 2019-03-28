@@ -10,6 +10,7 @@ dsmachines() {
 	declare -a _machine_data_arr
 	IFS=' ' read -a _machine_data_arr <<<"${_machine_data} "
 	CURRENT_DOCKER_MACHINE_NAME="${_machine_data_arr[0]}"
+	ORIGINAL_DOCKER_MACHINE=${ORIGINAL_DOCKER_MACHINE:=${CURRENT_DOCKER_MACHINE_NAME}}
 	SWARM_MANAGER_MACHINE_NAME="${_machine_data_arr[1]}"
 	unset _machine_data _machine_data_arr
 }
@@ -22,6 +23,7 @@ switch_to_machine() {
 
 	if [ "$1" != "${CURRENT_DOCKER_MACHINE_NAME}" ]
 	then
+		PRIOR_DOCKER_MACHINE="${CURRENT_DOCKER_MACHINE_NAME}"
 		eval $(docker-machine env "$1") 1>/dev/null
 		CURRENT_DOCKER_MACHINE_NAME="$1"
 	fi
@@ -33,13 +35,15 @@ switch_to_swarm_manager() {
 		dsmachines
 	fi
 
-	ORIGINAL_MACHINE="${CURRENT_DOCKER_MACHINE_NAME}"
-
 	switch_to_machine "${SWARM_MANAGER_MACHINE_NAME}"
 }
 
 switch_to_original_machine() {
-	switch_to_machine "${ORIGINAL_MACHINE}"
+	switch_to_machine "${ORIGINAL_DOCKER_MACHINE}"
+}
+
+switch_to_prior_machine() {
+	switch_to_machine "${PRIOR_DOCKER_MACHINE_NAME}"
 }
 
 push_secret() {
@@ -50,13 +54,13 @@ push_secret() {
 	else
 		echo $2 | docker secret create $1 - >/dev/null 2>/dev/null
 	fi
-	switch_to_original_machine
+	switch_to_prior_machine
 }
 
 remove_secret(){
 	switch_to_swarm_manager
 	docker secret rm $1 >/dev/null 2>/dev/null
-	switch_to_original_machine
+	switch_to_prior_machine
 }
 
 remove_secrets(){ # Returns names of secrets that couldn't be deleted
@@ -64,7 +68,7 @@ remove_secrets(){ # Returns names of secrets that couldn't be deleted
 
 	switch_to_swarm_manager
 	docker secret rm ${doomed_secrets[@]} 2>&1 | sed -n "s/^[^']*'\([^']*\)'[^']*$/\\1/p"
-	switch_to_original_machine
+	switch_to_prior_machine
 }
 
 get_secrets(){
@@ -77,6 +81,6 @@ get_secrets(){
 	done
 
 	switch_to_swarm_manager
-	docker secret ls ${filters[@]} --format={{.Name}}
-	switch_to_original_machine
+	docker secret ls ${filters[@]} --format {{.Name}}
+	switch_to_prior_machine
 }

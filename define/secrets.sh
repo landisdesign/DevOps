@@ -48,7 +48,7 @@ usage(){
 	echo "  -v               Version. Return the current version number for the secrets"
 	echo "                   identified by -s option, or all version numbers, then exit."
 	echo "                   If more than one secret is provided, the secret name"
-	echo "                   precedes the version number. No arguments other than"
+	echo "                   precedes the version number. No arguments other than -s and"
 	echo "                   input-file can be included with this version of the command."
 	echo
 	echo "  input-file       The file to read secret information from and store the new"
@@ -179,7 +179,7 @@ file=$1
 
 if [ ! -f "${file}" ]
 then
-	echo "${file} does not exist."
+	echo "${file} does not exist." >&2
 	exit 1
 fi
 

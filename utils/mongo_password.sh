@@ -282,7 +282,7 @@ successful_services=()
 for i in ${!hosts[@]}
 do
 	switch_utility_service_network "${networks[$i]}"
-	execute_utility_process sh /change_password.sh ${change_password_args[@]} -h ${hosts[$i]} 2>./~password_error${i}.txt 1>/dev/null 
+	execute_utility_process sh /password.sh ${change_password_args[@]} -h ${hosts[$i]} 2>./~password_error${i}.txt 1>/dev/null 
 	if [ $(ls -n ./~password_error${i}.txt | awk '{print $5}') -gt "0" ]
 	then
 		echo " ! ${hosts[$i]}"
